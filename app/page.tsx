@@ -201,7 +201,7 @@ export default function Dashboard() {
                   <Tooltip 
                     contentStyle={{ backgroundColor: '#0f172a', borderColor: '#1e293b', borderRadius: '8px', color: '#f8fafc' }}
                     itemStyle={{ color: '#818cf8' }}
-                    formatter={(value: number) => [`${value} ダイヤ`, '収益']}
+                    formatter={(value: any) => [`${value} ダイヤ`, '収益']}
                     labelFormatter={(label) => `${label} のイベント`}
                   />
                   <Area type="monotone" dataKey="coins" stroke="#818cf8" strokeWidth={3} fillOpacity={1} fill="url(#colorCoins)" />
