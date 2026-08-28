@@ -54,7 +54,12 @@ function connectToLive(systemId, username) {
     const { data: viewer } = await supabase
       .from('viewers')
       .upsert(
-        { id: data.userId.toString(), name: data.nickname, updated_at: new Date().toISOString() }, 
+        { 
+          id: data.userId.toString(),          // 【不変】システムID（主キー）
+          unique_id: data.uniqueId,            // 【変動】@から始まるID（リンク用）
+          name: data.nickname,                 // 【変動】表示名
+          updated_at: new Date().toISOString() 
+        }, 
         { onConflict: 'id' }
       )
       .select('id')
