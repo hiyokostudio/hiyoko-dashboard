@@ -55,9 +55,10 @@ function connectToLive(systemId, username) {
       .from('viewers')
       .upsert(
         { 
-          id: data.userId.toString(),          // 【不変】システムID（主キー）
-          unique_id: data.uniqueId,            // 【変動】@から始まるID（リンク用）
-          name: data.nickname,                 // 【変動】表示名
+          id: data.userId.toString(),
+          unique_id: data.uniqueId,
+          name: data.nickname,
+          avatar_url: data.profilePictureUrl, // ←追加：アイコン画像を保存
           updated_at: new Date().toISOString() 
         }, 
         { onConflict: 'id' }
