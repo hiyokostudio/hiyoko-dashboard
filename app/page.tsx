@@ -8,6 +8,7 @@ import { format } from 'date-fns';
 
 type GiftLog = { id: number; created_at: string; coins: number; viewers: { name: string } | null; };
 type DashboardStats = { today: number; month: number; total: number; custom: number; };
+type TargetLiver = { system_id: string; username: string; };
 
 export default function Dashboard() {
   const [logs, setLogs] = useState<GiftLog[]>([]);
@@ -18,25 +19,26 @@ export default function Dashboard() {
   const [endDate, setEndDate] = useState('');
   const [isFetchingCustom, setIsFetchingCustom] = useState(false);
 
-  const [targets, setTargets] = useState<string[]>([]);
-  const [activeTarget, setActiveTarget] = useState<string>('');
+  const [targets, setTargets] = useState<TargetLiver[]>([]);
+  const [activeTargetId, setActiveTargetId] = useState<string>('');
   const [isAdding, setIsAdding] = useState(false);
-  const [newTarget, setNewTarget] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [newSystemId, setNewSystemId] = useState('');
 
   useEffect(() => {
     fetchTargets();
   }, []);
 
   useEffect(() => {
-    if (!activeTarget) return;
+    if (!activeTargetId) return;
     
     if (activeTab !== 'custom') {
       fetchDefaultData();
     }
 
-    // 選択中のライバーのデータだけをリアルタイム受信するフィルター
-    const channel = supabase.channel(`public:gift_logs:${activeTarget}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs', filter: `liver_id=eq.${activeTarget}` }, async (payload) => {
+    // 不変のシステムIDでリアルタイムフィルター
+    const channel = supabase.channel(`public:gift_logs:${activeTargetId}`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs', filter: `liver_id=eq.${activeTargetId}` }, async (payload) => {
         if (activeTab === 'custom') return;
         const { data: viewerData } = await supabase.from('viewers').select('name').eq('id', payload.new.viewer_id).single();
         const newLog: GiftLog = { id: payload.new.id, created_at: payload.new.created_at, coins: payload.new.coins, viewers: { name: viewerData?.name || '不明' } };
@@ -46,55 +48,57 @@ export default function Dashboard() {
       }).subscribe();
 
     return () => { supabase.removeChannel(channel); };
-  }, [activeTarget, activeTab]);
+  }, [activeTargetId, activeTab]);
 
   const fetchTargets = async () => {
-    const { data } = await supabase.from('target_livers').select('username').eq('is_active', true);
+    const { data } = await supabase.from('target_livers').select('system_id, username').eq('is_active', true);
     if (data && data.length > 0) {
-      const usernames = data.map(t => t.username);
-      setTargets(usernames);
-      setActiveTarget(usernames[0]);
+      setTargets(data);
+      setActiveTargetId(data[0].system_id);
     }
   };
 
   const handleAddTarget = async () => {
-    if (!newTarget.trim()) return;
-    const username = newTarget.replace('@', '').trim();
-    const { error } = await supabase.from('target_livers').insert([{ username }]);
+    if (!newUsername.trim() || !newSystemId.trim()) return;
+    const username = newUsername.replace('@', '').trim();
+    const system_id = newSystemId.trim();
+
+    const { error } = await supabase.from('target_livers').insert([{ system_id, username }]);
     if (!error) {
-      setTargets(prev => [...prev, username]);
-      setActiveTarget(username);
-      setNewTarget('');
+      setTargets(prev => [...prev, { system_id, username }]);
+      setActiveTargetId(system_id);
+      setNewUsername('');
+      setNewSystemId('');
       setIsAdding(false);
     } else {
-      alert('追加に失敗したか、既に登録されています。');
+      alert('追加に失敗したか、システムIDが重複しています。');
     }
   };
 
   const fetchDefaultData = async () => {
     const { data: recentLogs } = await supabase
       .from('gift_logs').select('id, created_at, coins, viewers(name)')
-      .eq('liver_id', activeTarget)
+      .eq('liver_id', activeTargetId)
       .order('created_at', { ascending: false }).limit(50);
     
     if (recentLogs) setLogs(recentLogs as unknown as GiftLog[]);
 
-    const { data: statsData } = await supabase.rpc('get_dashboard_stats', { target_liver: activeTarget });
+    const { data: statsData } = await supabase.rpc('get_dashboard_stats', { target_liver_id: activeTargetId });
     if (statsData) setStats(prev => ({ ...prev, ...statsData }));
   };
 
   const fetchCustomRange = async () => {
-    if (!startDate || !endDate || !activeTarget) return;
+    if (!startDate || !endDate || !activeTargetId) return;
     setIsFetchingCustom(true);
     const startIso = new Date(`${startDate}T00:00:00+09:00`).toISOString();
     const endIso = new Date(`${endDate}T23:59:59+09:00`).toISOString();
 
-    const { data: sumData } = await supabase.rpc('get_custom_range_sum', { target_liver: activeTarget, start_date: startIso, end_date: endIso });
+    const { data: sumData } = await supabase.rpc('get_custom_range_sum', { target_liver_id: activeTargetId, start_date: startIso, end_date: endIso });
     setStats(prev => ({ ...prev, custom: sumData || 0 }));
 
     const { data: customLogs } = await supabase
       .from('gift_logs').select('id, created_at, coins, viewers(name)')
-      .eq('liver_id', activeTarget)
+      .eq('liver_id', activeTargetId)
       .gte('created_at', startIso).lte('created_at', endIso)
       .order('created_at', { ascending: false }).limit(100);
 
@@ -102,6 +106,7 @@ export default function Dashboard() {
     setIsFetchingCustom(false);
   };
 
+  const currentTarget = targets.find(t => t.system_id === activeTargetId);
   const chartData = logs.slice().reverse().map(log => ({ time: format(new Date(log.created_at), 'MM/dd HH:mm'), coins: log.coins }));
   const displayTotal = activeTab === 'today' ? stats.today : activeTab === 'month' ? stats.month : activeTab === 'total' ? stats.total : stats.custom;
 
@@ -116,13 +121,14 @@ export default function Dashboard() {
           </div>
           <div className="flex items-center space-x-3 bg-slate-900/50 p-2 rounded-xl border border-slate-800">
             <Radio size={18} className="text-indigo-400 ml-2" />
-            <select value={activeTarget} onChange={(e) => setActiveTarget(e.target.value)} className="bg-transparent text-white text-sm font-semibold outline-none cursor-pointer pr-4">
-              {targets.map(t => <option key={t} value={t} className="bg-slate-900 text-white">{t}</option>)}
+            <select value={activeTargetId} onChange={(e) => setActiveTargetId(e.target.value)} className="bg-transparent text-white text-sm font-semibold outline-none cursor-pointer pr-4">
+              {targets.map(t => <option key={t.system_id} value={t.system_id} className="bg-slate-900 text-white">{t.username}</option>)}
             </select>
             <div className="h-6 w-px bg-slate-700 mx-1"></div>
             {isAdding ? (
               <div className="flex items-center space-x-2 pr-1">
-                <input type="text" value={newTarget} onChange={e => setNewTarget(e.target.value)} placeholder="TikTok ID..." className="bg-slate-800 text-xs px-2 py-1.5 rounded border border-slate-700 outline-none w-28 text-white focus:border-indigo-500" onKeyDown={(e) => e.key === 'Enter' && handleAddTarget()} />
+                <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="ユーザー名" className="bg-slate-800 text-xs px-2 py-1.5 rounded border border-slate-700 outline-none w-24 text-white focus:border-indigo-500" />
+                <input type="text" value={newSystemId} onChange={e => setNewSystemId(e.target.value)} placeholder="システムID" className="bg-slate-800 text-xs px-2 py-1.5 rounded border border-slate-700 outline-none w-28 text-white focus:border-indigo-500" />
                 <button onClick={handleAddTarget} className="bg-indigo-600 hover:bg-indigo-500 text-white p-1.5 rounded text-xs transition-colors"><Plus size={14} /></button>
                 <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-slate-200 px-1 text-xs">Cancel</button>
               </div>
@@ -167,8 +173,8 @@ export default function Dashboard() {
           <div className="bg-gradient-to-br from-indigo-600 to-purple-700 p-6 rounded-2xl shadow-lg relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-20"><Radio size={80} /></div>
             <p className="text-sm font-medium text-indigo-100 mb-2">表示中のライバー</p>
-            <h2 className="text-2xl font-bold text-white tracking-tight mt-1 truncate">{activeTarget || '読込中...'}</h2>
-            <p className="text-xs text-indigo-200 mt-3">24時間365日 監視実行中</p>
+            <h2 className="text-2xl font-bold text-white tracking-tight mt-1 truncate">{currentTarget?.username || '読込中...'}</h2>
+            <p className="text-xs text-indigo-200 text-opacity-80 mt-1 font-mono">ID: {activeTargetId}</p>
           </div>
         </div>
 

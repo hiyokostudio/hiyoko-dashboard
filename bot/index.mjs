@@ -12,12 +12,10 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 );
 
-// 接続中のライバーを管理するリスト
 const activeConnections = new Map();
 
 async function startBot() {
-  console.log('🤖 複数人監視Botを起動します...');
-  // 1分ごとにデータベースの名簿をチェック
+  console.log('🤖 システムID管理型 Botを起動します...');
   setInterval(checkTargets, 60000);
   checkTargets();
 }
@@ -25,37 +23,33 @@ async function startBot() {
 async function checkTargets() {
   const { data: targets } = await supabase
     .from('target_livers')
-    .select('username')
+    .select('system_id, username')
     .eq('is_active', true);
     
   if (!targets) return;
 
-  const activeUsernames = targets.map(t => t.username);
-
-  // 名簿にあって、まだ接続していないライバーに接続開始
-  for (const username of activeUsernames) {
-    if (!activeConnections.has(username)) {
-      connectToLive(username);
+  for (const target of targets) {
+    if (!activeConnections.has(target.system_id)) {
+      connectToLive(target.system_id, target.username);
     }
   }
 }
 
-function connectToLive(username) {
-  console.log(`[${username}] 接続準備中...`);
+function connectToLive(systemId, username) {
+  console.log(`[${username} (${systemId})] 接続準備中...`);
   const connection = new WebcastPushConnection(username);
-  activeConnections.set(username, connection);
+  activeConnections.set(systemId, connection);
 
   connection.connect().then(state => {
-    console.log(`✅ [${username}] 接続成功! 配信ルームID: ${state.roomId}`);
+    console.log(`✅ [${username}] 接続成功! RoomID: ${state.roomId}`);
   }).catch(err => {
     console.error(`❌ [${username}] 接続エラー:`, err.message);
-    activeConnections.delete(username);
+    activeConnections.delete(systemId);
   });
 
   connection.on('gift', async data => {
     if (data.giftType === 1 && !data.repeatEnd) return;
     const coins = data.diamondCount * (data.repeatCount || 1);
-    console.log(`🎁 [${username}] ${data.nickname} から ${coins} ダイヤ`);
 
     const { data: viewer } = await supabase
       .from('viewers')
@@ -66,9 +60,9 @@ function connectToLive(username) {
       .select('id')
       .single();
 
-    // liver_idにユーザー名を入れて保存（誰のデータか分かるようにする）
+    // DBには「不変のシステムID」でログを保存
     await supabase.from('gift_logs').insert({
-      liver_id: username,
+      liver_id: systemId,
       viewer_id: viewer.id,
       gift_id: data.giftId.toString(),
       coins: coins,
@@ -78,7 +72,7 @@ function connectToLive(username) {
 
   connection.on('streamEnd', () => {
     console.log(`🔴 [${username}] 配信終了`);
-    activeConnections.delete(username);
+    activeConnections.delete(systemId);
   });
 }
 
