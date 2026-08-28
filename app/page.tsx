@@ -1,23 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '../utils/supabase';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Activity, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, Radio, AlertTriangle } from 'lucide-react';
+import { supabase } from '@/utils/supabase';
+import { ShieldCheck, Activity, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, Radio, AlertTriangle, Crown, Award } from 'lucide-react';
 import { format } from 'date-fns';
 
-type LiverStat = {
-  system_id: string;
-  username: string;
-  is_active: boolean;
-  total_coins: number;
-  unique_listeners: number;
-  core_fans: number;
-  top1_coins: number;
-  dependency_rate: number;
-};
-
+type LiverStat = { system_id: string; username: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; };
 type GiftLog = { id: number; created_at: string; coins: number; viewers: { name: string } | null; };
+type VipListener = { viewer_id: string; viewer_name: string; total_coins: number; rank: number; };
 
 export default function Dashboard() {
   const [stats, setStats] = useState<LiverStat[]>([]);
@@ -31,27 +21,22 @@ export default function Dashboard() {
   const [newUsername, setNewUsername] = useState('');
   const [newSystemId, setNewSystemId] = useState('');
 
-  // 選択中のライバーの詳細表示用
   const [selectedLiverId, setSelectedLiverId] = useState<string>('');
   const [detailLogs, setDetailLogs] = useState<GiftLog[]>([]);
+  const [vipListeners, setVipListeners] = useState<VipListener[]>([]);
 
   useEffect(() => {
-    if (activeTab !== 'custom') {
-      fetchIntelligenceData();
-    }
+    if (activeTab !== 'custom') fetchIntelligenceData();
     
-    // リアルタイム購読
     const channel = supabase.channel('public:gift_logs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, async (payload) => {
-        if (activeTab !== 'custom') {
-          fetchIntelligenceData();
-        }
-        
-        // 新しいギフトが選択中のライバー宛てなら詳細ログも更新
+        if (activeTab !== 'custom') fetchIntelligenceData();
         if (selectedLiverId && selectedLiverId === payload.new.liver_id) {
             const { data: viewerData } = await supabase.from('viewers').select('name').eq('id', payload.new.viewer_id).single();
             const newLog: GiftLog = { id: payload.new.id, created_at: payload.new.created_at, coins: payload.new.coins, viewers: { name: viewerData?.name || '不明' } };
-            setDetailLogs(prev => [newLog, ...prev].slice(0, 100));
+            setDetailLogs(prev => [newLog, ...prev].slice(0, 50));
+            // リアルタイムでVIPリストも更新
+            fetchVips(selectedLiverId);
         }
       }).subscribe();
       
@@ -59,17 +44,18 @@ export default function Dashboard() {
   }, [activeTab, selectedLiverId]);
 
   useEffect(() => {
-    if (selectedLiverId) fetchDetailLogs(selectedLiverId);
+    if (selectedLiverId) {
+      fetchDetailLogs(selectedLiverId);
+      fetchVips(selectedLiverId);
+    }
   }, [selectedLiverId, activeTab]);
 
-  const fetchIntelligenceData = async (customStart?: string, customEnd?: string) => {
-    setLoading(true);
+  const getTimeBounds = () => {
     let startIso = null; let endIso = null;
     const now = new Date();
-    
-    if (customStart && customEnd) {
-      startIso = new Date(`${customStart}T00:00:00+09:00`).toISOString();
-      endIso = new Date(`${customEnd}T23:59:59+09:00`).toISOString();
+    if (activeTab === 'custom' && startDate && endDate) {
+      startIso = new Date(`${startDate}T00:00:00+09:00`).toISOString();
+      endIso = new Date(`${endDate}T23:59:59+09:00`).toISOString();
     } else if (activeTab === 'today') {
       const today = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
       today.setHours(0, 0, 0, 0);
@@ -79,38 +65,37 @@ export default function Dashboard() {
       month.setDate(1); month.setHours(0, 0, 0, 0);
       startIso = new Date(month.getTime() - 9 * 60 * 60 * 1000).toISOString();
     }
+    return { startIso, endIso };
+  };
 
+  const fetchIntelligenceData = async () => {
+    setLoading(true);
+    const { startIso, endIso } = getTimeBounds();
     const { data, error } = await supabase.rpc('get_intelligence_stats', { p_start_date: startIso, p_end_date: endIso });
     if (data && !error) {
       const sorted = (data as LiverStat[]).sort((a, b) => b.total_coins - a.total_coins);
       setStats(sorted);
-      if (sorted.length > 0 && !selectedLiverId) {
-        setSelectedLiverId(sorted[0].system_id);
-      }
+      if (sorted.length > 0 && !selectedLiverId) setSelectedLiverId(sorted[0].system_id);
     }
     setLoading(false);
   };
 
   const fetchDetailLogs = async (systemId: string) => {
-    let query = supabase.from('gift_logs').select('id, created_at, coins, viewers(name)').eq('liver_id', systemId).order('created_at', { ascending: false }).limit(100);
-    
-    if (activeTab === 'custom' && startDate && endDate) {
-      query = query.gte('created_at', new Date(`${startDate}T00:00:00+09:00`).toISOString()).lte('created_at', new Date(`${endDate}T23:59:59+09:00`).toISOString());
-    } else if (activeTab === 'today') {
-      const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
-      today.setHours(0, 0, 0, 0);
-      query = query.gte('created_at', new Date(today.getTime() - 9 * 60 * 60 * 1000).toISOString());
-    } else if (activeTab === 'month') {
-      const month = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
-      month.setDate(1); month.setHours(0, 0, 0, 0);
-      query = query.gte('created_at', new Date(month.getTime() - 9 * 60 * 60 * 1000).toISOString());
-    }
-    
+    let query = supabase.from('gift_logs').select('id, created_at, coins, viewers(name)').eq('liver_id', systemId).order('created_at', { ascending: false }).limit(50);
+    const { startIso, endIso } = getTimeBounds();
+    if (startIso) query = query.gte('created_at', startIso);
+    if (endIso) query = query.lte('created_at', endIso);
     const { data } = await query;
     if (data) setDetailLogs(data as unknown as GiftLog[]);
   };
 
-  const handleCustomFetch = () => { if (startDate && endDate) { fetchIntelligenceData(startDate, endDate); if (selectedLiverId) fetchDetailLogs(selectedLiverId); } };
+  const fetchVips = async (systemId: string) => {
+    const { startIso, endIso } = getTimeBounds();
+    const { data, error } = await supabase.rpc('get_liver_vips', { p_system_id: systemId, p_start_date: startIso, p_end_date: endIso });
+    if (data && !error) setVipListeners(data as VipListener[]);
+  };
+
+  const handleCustomFetch = () => { if (startDate && endDate) { fetchIntelligenceData(); if (selectedLiverId) { fetchDetailLogs(selectedLiverId); fetchVips(selectedLiverId); } } };
 
   const handleAddTarget = async () => {
     if (!newUsername.trim() || !newSystemId.trim()) return;
@@ -132,8 +117,8 @@ export default function Dashboard() {
   const safeCount = stats.filter(s => s.total_coins > 0 && s.dependency_rate < 50).length;
   const warningCount = stats.filter(s => s.total_coins > 0 && s.dependency_rate >= 50 && s.dependency_rate < 80).length;
 
-  const chartData = detailLogs.slice().reverse().map(log => ({ time: format(new Date(log.created_at), 'MM/dd HH:mm'), coins: log.coins }));
-  const selectedLiverName = stats.find(s => s.system_id === selectedLiverId)?.username || '不明';
+  const selectedLiver = stats.find(s => s.system_id === selectedLiverId);
+  const selectedLiverTotalCoins = selectedLiver?.total_coins || 1; // 0除算防止
 
   if (loading && stats.length === 0) return <div className="min-h-screen bg-slate-950 flex items-center justify-center font-bold text-slate-500">System Initializing...</div>;
 
@@ -149,7 +134,6 @@ export default function Dashboard() {
           </div>
           
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-            {/* 期間指定UI */}
             <div className="flex space-x-1 bg-slate-900/80 p-1 rounded-xl shadow-inner border border-slate-800 backdrop-blur-sm">
               <button onClick={() => setActiveTab('today')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'today' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><Clock size={14} className="mr-1.5" /> 本日</button>
               <button onClick={() => setActiveTab('month')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'month' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><Calendar size={14} className="mr-1.5" /> 今月</button>
@@ -229,7 +213,7 @@ export default function Dashboard() {
                   <th className="p-4 pl-6">Target</th>
                   <th className="p-4 text-right">Coins</th>
                   <th className="p-4 text-center">Unique</th>
-                  <th className="p-4 text-center">Core(1K+)</th>
+                  <th className="p-4 text-center">Core (1K+)</th>
                   <th className="p-4 w-48">Top1 Dependency</th>
                   <th className="p-4 text-center">Health</th>
                   <th className="p-4 text-center pr-6">Track</th>
@@ -263,7 +247,7 @@ export default function Dashboard() {
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-3">
-                          <span className="w-12 text-xs font-black text-slate-300 text-right">{liver.total_coins > 0 ? `${liver.dependency_rate}%` : '-'}</span>
+                          <span className="w-10 text-xs font-black text-slate-300 text-right">{liver.total_coins > 0 ? `${liver.dependency_rate}%` : '-'}</span>
                           <div className="flex-grow h-1.5 bg-slate-800 rounded-full overflow-hidden">
                             <div className={`h-full rounded-full transition-all duration-500 ${isDanger ? 'bg-rose-500' : isSafe ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(liver.total_coins > 0 ? liver.dependency_rate : 0, 100)}%` }}></div>
                           </div>
@@ -283,41 +267,68 @@ export default function Dashboard() {
                     </tr>
                   );
                 })}
-                {stats.length === 0 && !loading && (
-                  <tr><td colSpan={7} className="p-8 text-center text-slate-500 text-sm">ライバーが登録されていません</td></tr>
-                )}
               </tbody>
             </table>
           </div>
         </div>
 
-        {/* 選択したライバーの詳細分析（グラフとログ） */}
-        {selectedLiverId && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[500px] animate-in fade-in slide-in-from-bottom-4">
-            <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col relative overflow-hidden backdrop-blur-md">
-              <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Activity size={120} /></div>
-              <h3 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-6 flex items-center justify-between">
-                <div className="flex items-center"><Activity className="mr-2 h-4 w-4 text-indigo-400" /> @{selectedLiverName} - Trend</div>
+        {/* 【新設】選択したライバーの戦略詳細エリア（VIP名簿 CRM ＆ リアルタイムログ） */}
+        {selectedLiverId && selectedLiver && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
+            
+            {/* VIP CRM（メイン） */}
+            <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col relative overflow-hidden backdrop-blur-md h-[500px]">
+              <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Crown size={120} /></div>
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-sm font-black text-slate-300 uppercase tracking-widest flex items-center">
+                  <Crown className="mr-2 h-5 w-5 text-amber-400" /> @{selectedLiver.username} - VIP CRM (貢献度ランキング)
+                </h3>
                 <span className="text-[10px] font-bold text-slate-500 bg-slate-950 px-3 py-1 rounded-full border border-slate-800">{activeTab === 'custom' ? 'Past Data' : 'Real-time'}</span>
-              </h3>
-              <div className="flex-grow w-full min-h-[250px]">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                    <defs>
-                      <linearGradient id="colorCoins" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#818cf8" stopOpacity={0.4}/><stop offset="95%" stopColor="#818cf8" stopOpacity={0}/></linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                    <XAxis dataKey="time" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
-                    <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}`} />
-                    <Tooltip contentStyle={{ backgroundColor: '#020617', borderColor: '#1e293b', borderRadius: '8px', color: '#f8fafc' }} itemStyle={{ color: '#818cf8', fontWeight: 'bold' }} formatter={(value: any) => [`${value} ダイヤ`, '収益']} labelFormatter={(label) => `${label}`} />
-                    <Area type="monotone" dataKey="coins" stroke="#818cf8" strokeWidth={3} fillOpacity={1} fill="url(#colorCoins)" />
-                  </AreaChart>
-                </ResponsiveContainer>
+              </div>
+              
+              <div className="flex-grow overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                <div className="space-y-3">
+                  {vipListeners.map((vip) => {
+                    const contributionRate = selectedLiverTotalCoins > 0 ? (vip.total_coins / selectedLiverTotalCoins) * 100 : 0;
+                    const isCoreFan = vip.total_coins >= 1000;
+                    
+                    return (
+                      <div key={vip.viewer_id} className={`flex items-center p-3 rounded-xl border transition-colors ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-800/80'}`}>
+                        <div className="w-8 text-center flex-shrink-0">
+                          {vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto" /> :
+                           vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> :
+                           vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> :
+                           <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}
+                        </div>
+                        <div className="flex-grow ml-4 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`font-bold text-sm truncate ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}>{vip.viewer_name}</span>
+                            {isCoreFan && <span className="text-[10px] font-black tracking-widest text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded uppercase flex items-center"><Flame size={10} className="mr-0.5"/> Core</span>}
+                          </div>
+                          <div className="flex items-center gap-3 mt-1.5">
+                            <div className="flex-grow h-1 bg-slate-800 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${vip.rank === 1 ? 'bg-amber-400' : isCoreFan ? 'bg-orange-400' : 'bg-indigo-500'}`} style={{ width: `${contributionRate}%` }}></div>
+                            </div>
+                            <span className="text-[10px] font-mono text-slate-500 w-8 text-right">{contributionRate.toFixed(1)}%</span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end ml-4 flex-shrink-0">
+                          <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
+                          <span className="text-[10px] text-slate-500">ダイヤ</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {vipListeners.length === 0 && (
+                    <div className="flex flex-col items-center justify-center text-slate-600 h-40 space-y-3"><Users className="opacity-20" size={40} /><p className="text-xs font-bold uppercase tracking-widest">No Listeners Found</p></div>
+                  )}
+                </div>
               </div>
             </div>
 
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col overflow-hidden backdrop-blur-md">
-              <h3 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-4 flex items-center pb-4 border-b border-slate-800/80"><Coins className="mr-2 h-4 w-4 text-amber-400" />Recent Logs</h3>
+            {/* リアルタイムログ（サブ） */}
+            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col overflow-hidden backdrop-blur-md h-[500px]">
+              <h3 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-4 flex items-center pb-4 border-b border-slate-800/80"><Coins className="mr-2 h-4 w-4 text-emerald-400" />Recent Logs</h3>
               <div className="flex-grow overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
                 {detailLogs.map((log) => (
                   <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-800/80 transition-colors border border-slate-800/50">
@@ -325,8 +336,8 @@ export default function Dashboard() {
                       <span className="font-bold text-slate-200 text-sm truncate">{log.viewers?.name || '不明'}</span>
                       <span className="text-[10px] font-medium text-slate-500 mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
                     </div>
-                    <div className="flex items-center bg-indigo-500/10 px-2 py-1 rounded-lg border border-indigo-500/20 whitespace-nowrap ml-2">
-                      <span className="font-black text-indigo-400 text-xs">+{log.coins}</span>
+                    <div className="flex items-center bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20 whitespace-nowrap ml-2">
+                      <span className="font-black text-emerald-400 text-xs">+{log.coins}</span>
                     </div>
                   </div>
                 ))}
@@ -335,6 +346,7 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
+            
           </div>
         )}
       </div>
