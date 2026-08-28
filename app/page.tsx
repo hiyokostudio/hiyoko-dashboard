@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { supabase } from '@/utils/supabase';
-import { ShieldCheck, Activity, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch } from 'lucide-react';
+import { supabase } from '../utils/supabase';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ShieldCheck, Activity, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, Radio, AlertTriangle } from 'lucide-react';
+import { format } from 'date-fns';
 
 type LiverStat = {
   system_id: string;
@@ -14,6 +16,8 @@ type LiverStat = {
   top1_coins: number;
   dependency_rate: number;
 };
+
+type GiftLog = { id: number; created_at: string; coins: number; viewers: { name: string } | null; };
 
 export default function Dashboard() {
   const [stats, setStats] = useState<LiverStat[]>([]);
@@ -27,23 +31,42 @@ export default function Dashboard() {
   const [newUsername, setNewUsername] = useState('');
   const [newSystemId, setNewSystemId] = useState('');
 
+  // 選択中のライバーの詳細表示用
+  const [selectedLiverId, setSelectedLiverId] = useState<string>('');
+  const [detailLogs, setDetailLogs] = useState<GiftLog[]>([]);
+
   useEffect(() => {
     if (activeTab !== 'custom') {
-      fetchData();
+      fetchIntelligenceData();
     }
+    
+    // リアルタイム購読
     const channel = supabase.channel('public:gift_logs')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, () => {
-        if (activeTab !== 'custom') fetchData();
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, async (payload) => {
+        if (activeTab !== 'custom') {
+          fetchIntelligenceData();
+        }
+        
+        // 新しいギフトが選択中のライバー宛てなら詳細ログも更新
+        if (selectedLiverId && selectedLiverId === payload.new.liver_id) {
+            const { data: viewerData } = await supabase.from('viewers').select('name').eq('id', payload.new.viewer_id).single();
+            const newLog: GiftLog = { id: payload.new.id, created_at: payload.new.created_at, coins: payload.new.coins, viewers: { name: viewerData?.name || '不明' } };
+            setDetailLogs(prev => [newLog, ...prev].slice(0, 100));
+        }
       }).subscribe();
+      
     return () => { supabase.removeChannel(channel); };
-  }, [activeTab]);
+  }, [activeTab, selectedLiverId]);
 
-  const fetchData = async (customStart?: string, customEnd?: string) => {
+  useEffect(() => {
+    if (selectedLiverId) fetchDetailLogs(selectedLiverId);
+  }, [selectedLiverId, activeTab]);
+
+  const fetchIntelligenceData = async (customStart?: string, customEnd?: string) => {
     setLoading(true);
-    let startIso = null;
-    let endIso = null;
-
+    let startIso = null; let endIso = null;
     const now = new Date();
+    
     if (customStart && customEnd) {
       startIso = new Date(`${customStart}T00:00:00+09:00`).toISOString();
       endIso = new Date(`${customEnd}T23:59:59+09:00`).toISOString();
@@ -53,206 +76,267 @@ export default function Dashboard() {
       startIso = new Date(today.getTime() - 9 * 60 * 60 * 1000).toISOString();
     } else if (activeTab === 'month') {
       const month = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
-      month.setDate(1);
-      month.setHours(0, 0, 0, 0);
+      month.setDate(1); month.setHours(0, 0, 0, 0);
       startIso = new Date(month.getTime() - 9 * 60 * 60 * 1000).toISOString();
     }
 
-    const { data, error } = await supabase.rpc('get_intelligence_stats', {
-      p_start_date: startIso,
-      p_end_date: endIso
-    });
-
+    const { data, error } = await supabase.rpc('get_intelligence_stats', { p_start_date: startIso, p_end_date: endIso });
     if (data && !error) {
-      setStats((data as LiverStat[]).sort((a, b) => b.total_coins - a.total_coins));
+      const sorted = (data as LiverStat[]).sort((a, b) => b.total_coins - a.total_coins);
+      setStats(sorted);
+      if (sorted.length > 0 && !selectedLiverId) {
+        setSelectedLiverId(sorted[0].system_id);
+      }
     }
     setLoading(false);
   };
 
-  const handleCustomFetch = () => {
-    if (startDate && endDate) fetchData(startDate, endDate);
+  const fetchDetailLogs = async (systemId: string) => {
+    let query = supabase.from('gift_logs').select('id, created_at, coins, viewers(name)').eq('liver_id', systemId).order('created_at', { ascending: false }).limit(100);
+    
+    if (activeTab === 'custom' && startDate && endDate) {
+      query = query.gte('created_at', new Date(`${startDate}T00:00:00+09:00`).toISOString()).lte('created_at', new Date(`${endDate}T23:59:59+09:00`).toISOString());
+    } else if (activeTab === 'today') {
+      const today = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+      today.setHours(0, 0, 0, 0);
+      query = query.gte('created_at', new Date(today.getTime() - 9 * 60 * 60 * 1000).toISOString());
+    } else if (activeTab === 'month') {
+      const month = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+      month.setDate(1); month.setHours(0, 0, 0, 0);
+      query = query.gte('created_at', new Date(month.getTime() - 9 * 60 * 60 * 1000).toISOString());
+    }
+    
+    const { data } = await query;
+    if (data) setDetailLogs(data as unknown as GiftLog[]);
   };
+
+  const handleCustomFetch = () => { if (startDate && endDate) { fetchIntelligenceData(startDate, endDate); if (selectedLiverId) fetchDetailLogs(selectedLiverId); } };
 
   const handleAddTarget = async () => {
     if (!newUsername.trim() || !newSystemId.trim()) return;
     const username = newUsername.replace('@', '').trim();
     const system_id = newSystemId.trim();
-
     const { error } = await supabase.rpc('add_target_liver', { p_system_id: system_id, p_username: username });
-    if (!error) {
-      setNewUsername(''); setNewSystemId(''); setIsAdding(false);
-      fetchData();
-    } else {
-      alert('追加に失敗しました。');
-    }
+    if (!error) { setNewUsername(''); setNewSystemId(''); setIsAdding(false); fetchIntelligenceData(); } else { alert('追加に失敗しました。'); }
   };
 
   const toggleStatus = async (systemId: string, current: boolean) => {
     await supabase.from('target_livers').update({ is_active: !current }).eq('system_id', systemId);
-    fetchData();
+    fetchIntelligenceData();
   };
 
   const systemTotalCoins = stats.reduce((sum, s) => sum + s.total_coins, 0);
   const systemCoreFans = stats.reduce((sum, s) => sum + s.core_fans, 0);
   const activeCount = stats.filter(s => s.is_active).length;
-  
   const dangerCount = stats.filter(s => s.total_coins > 0 && s.dependency_rate >= 80).length;
   const safeCount = stats.filter(s => s.total_coins > 0 && s.dependency_rate < 50).length;
   const warningCount = stats.filter(s => s.total_coins > 0 && s.dependency_rate >= 50 && s.dependency_rate < 80).length;
 
-  if (loading && stats.length === 0) return <div className="min-h-screen bg-[#F4F7F9] flex items-center justify-center font-bold text-slate-400">システム構築中...</div>;
+  const chartData = detailLogs.slice().reverse().map(log => ({ time: format(new Date(log.created_at), 'MM/dd HH:mm'), coins: log.coins }));
+  const selectedLiverName = stats.find(s => s.system_id === selectedLiverId)?.username || '不明';
+
+  if (loading && stats.length === 0) return <div className="min-h-screen bg-slate-950 flex items-center justify-center font-bold text-slate-500">System Initializing...</div>;
 
   return (
-    <div className="min-h-screen bg-[#F4F7F9] text-slate-800 p-6 md:p-10 font-sans">
-      <div className="max-w-6xl mx-auto space-y-6">
+    <div className="min-h-screen bg-[#020617] text-slate-50 p-4 md:p-8 font-sans selection:bg-indigo-500/30 overflow-x-hidden">
+      <div className="max-w-7xl mx-auto space-y-8">
         
-        <header className="pb-2">
-          <h1 className="text-3xl font-black tracking-tight text-[#161B22]">Analytics</h1>
-          <p className="text-sm font-bold text-slate-500 mt-1">HiyokoStudio Intelligence</p>
+        {/* ヘッダーエリア */}
+        <header className="flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-slate-800/80 pb-6">
+          <div>
+            <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Hiyoko Intelligence</h1>
+            <p className="text-slate-400 mt-1 text-sm font-medium">TikTok Live Strategic Management</p>
+          </div>
+          
+          <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
+            {/* 期間指定UI */}
+            <div className="flex space-x-1 bg-slate-900/80 p-1 rounded-xl shadow-inner border border-slate-800 backdrop-blur-sm">
+              <button onClick={() => setActiveTab('today')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'today' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><Clock size={14} className="mr-1.5" /> 本日</button>
+              <button onClick={() => setActiveTab('month')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'month' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><Calendar size={14} className="mr-1.5" /> 今月</button>
+              <button onClick={() => setActiveTab('total')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'total' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><Globe size={14} className="mr-1.5" /> 全期間</button>
+              <button onClick={() => setActiveTab('custom')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'custom' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><CalendarSearch size={14} className="mr-1.5" /> 指定</button>
+            </div>
+            {activeTab === 'custom' && (
+              <div className="flex items-center space-x-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800 shadow-inner animate-in fade-in">
+                <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-slate-950 border border-slate-700 text-sm rounded-lg px-3 py-1.5 outline-none font-bold text-slate-300 focus:border-indigo-500" />
+                <span className="text-slate-500">〜</span>
+                <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-slate-950 border border-slate-700 text-sm rounded-lg px-3 py-1.5 outline-none font-bold text-slate-300 focus:border-indigo-500" />
+                <button onClick={handleCustomFetch} disabled={!startDate || !endDate} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors">集計</button>
+              </div>
+            )}
+          </div>
         </header>
 
-        {/* 期間指定UI */}
-        <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
-          <div className="flex space-x-1 bg-white p-1 rounded-xl shadow-sm border border-slate-200">
-            <button onClick={() => setActiveTab('today')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'today' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}><Clock size={14} className="mr-1.5" /> 本日</button>
-            <button onClick={() => setActiveTab('month')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'month' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}><Calendar size={14} className="mr-1.5" /> 今月</button>
-            <button onClick={() => setActiveTab('total')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'total' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}><Globe size={14} className="mr-1.5" /> 全期間</button>
-            <button onClick={() => setActiveTab('custom')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'custom' ? 'bg-blue-600 text-white' : 'text-slate-500 hover:bg-slate-50'}`}><CalendarSearch size={14} className="mr-1.5" /> 期間指定</button>
-          </div>
-          {activeTab === 'custom' && (
-            <div className="flex items-center space-x-2 bg-white p-1.5 rounded-xl border border-slate-200 shadow-sm animate-in fade-in">
-              <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} className="bg-slate-50 border border-slate-200 text-sm rounded px-3 py-1.5 outline-none font-bold text-slate-700" />
-              <span className="text-slate-400">〜</span>
-              <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-slate-50 border border-slate-200 text-sm rounded px-3 py-1.5 outline-none font-bold text-slate-700" />
-              <button onClick={handleCustomFetch} disabled={!startDate || !endDate} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-xs font-bold transition-colors">集計</button>
-            </div>
-          )}
-        </div>
-
-        {/* システムステータス（Mockup準拠） */}
-        <div className="flex flex-col md:flex-row gap-6">
-          <div className="flex-1 bg-[#1A2130] text-white rounded-2xl p-8 shadow-lg relative overflow-hidden flex flex-col justify-center">
-            <p className="text-sm font-bold text-slate-400 mb-2 uppercase tracking-wider">Total System Coins <span className="lowercase font-normal">({activeTab === 'today' ? '本日' : activeTab === 'month' ? '今月' : activeTab === 'total' ? '累計' : '指定期間'})</span></p>
-            <h2 className="text-6xl font-black mb-8">{systemTotalCoins.toLocaleString()}</h2>
-            <div className="flex gap-10">
+        {/* システムサマリー */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="md:col-span-2 bg-slate-900/60 border border-slate-800/80 p-6 rounded-3xl shadow-lg relative overflow-hidden backdrop-blur-sm">
+            <div className="absolute top-0 right-0 p-6 opacity-10"><Coins size={100} /></div>
+            <p className="text-xs font-bold text-indigo-400 mb-2 tracking-wider uppercase">System Total Coins <span className="lowercase font-normal">({activeTab === 'today' ? '本日' : activeTab === 'month' ? '今月' : activeTab === 'total' ? '累計' : '指定期間'})</span></p>
+            <h2 className="text-5xl font-black text-white mb-6 tracking-tight">{systemTotalCoins.toLocaleString()}</h2>
+            <div className="flex gap-12">
               <div>
-                <p className="text-xs font-bold text-slate-400 mb-1">所属ライバー</p>
-                <p className="text-xl font-bold">{activeCount} <span className="text-sm text-slate-400 font-normal">名</span></p>
+                <p className="text-xs font-bold text-slate-500 mb-1">所属ライバー</p>
+                <p className="text-2xl font-bold text-white">{activeCount} <span className="text-sm text-slate-500 font-normal">名</span></p>
               </div>
               <div>
-                <p className="text-xs font-bold text-slate-400 mb-1">システム全体コアファン (1K+)</p>
-                <p className="text-xl font-bold">{systemCoreFans} <span className="text-sm text-slate-400 font-normal">名</span></p>
+                <p className="text-xs font-bold text-slate-500 mb-1">システム全体コアファン (1K+)</p>
+                <p className="text-2xl font-bold text-amber-400">{systemCoreFans} <span className="text-sm text-slate-500 font-normal">名</span></p>
               </div>
             </div>
           </div>
 
-          <div className="md:w-96 bg-white rounded-2xl p-8 shadow-sm border border-slate-200 flex flex-col justify-center">
-            <h3 className="text-sm font-bold text-slate-700 mb-6">アカウント健全度分布</h3>
+          <div className="bg-slate-900/60 border border-slate-800/80 p-6 rounded-3xl shadow-sm flex flex-col justify-center backdrop-blur-sm">
+            <h3 className="text-xs font-bold text-slate-400 mb-6 uppercase tracking-wider flex items-center"><ShieldCheck size={14} className="mr-2" />アカウント健全度分布</h3>
             <div className="space-y-4">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-500"></div><span className="text-sm font-bold text-slate-700">健全 <span className="text-xs text-slate-400 font-normal">(50%未満)</span></span></div>
-                <span className="font-black text-slate-900 text-xl">{safeCount}</span>
+                <div className="flex items-center gap-3"><div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div><span className="text-sm font-bold text-slate-300">健全 <span className="text-xs text-slate-500 font-normal">(50%未満)</span></span></div>
+                <span className="font-black text-white text-xl">{safeCount}</span>
               </div>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-amber-500"></div><span className="text-sm font-bold text-slate-700">注意 <span className="text-xs text-slate-400 font-normal">(50%~79%)</span></span></div>
-                <span className="font-black text-slate-900 text-xl">{warningCount}</span>
+                <div className="flex items-center gap-3"><div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]"></div><span className="text-sm font-bold text-slate-300">注意 <span className="text-xs text-slate-500 font-normal">(50%~79%)</span></span></div>
+                <span className="font-black text-white text-xl">{warningCount}</span>
               </div>
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-rose-500"></div><span className="text-sm font-bold text-slate-700">危険 <span className="text-xs text-slate-400 font-normal">(80%以上)</span></span></div>
-                <span className="font-black text-slate-900 text-xl">{dangerCount}</span>
+                <div className="flex items-center gap-3"><div className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></div><span className="text-sm font-bold text-slate-300">危険 <span className="text-xs text-slate-500 font-normal">(80%以上)</span></span></div>
+                <span className="font-black text-white text-xl">{dangerCount}</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* ライバー詳細分析 */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-6 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-white gap-4">
-            <h3 className="text-lg font-black text-slate-800">ライバー詳細分析</h3>
+        {/* マトリックス */}
+        <div className="bg-slate-900/80 rounded-3xl shadow-lg border border-slate-800 overflow-hidden backdrop-blur-md">
+          <div className="p-5 border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/50">
+            <h3 className="text-sm font-black text-slate-200 uppercase tracking-widest">Liver Intelligence Matrix</h3>
             {isAdding ? (
-              <div className="flex items-center space-x-2 bg-slate-50 p-2 rounded-xl border border-slate-200 shadow-sm animate-in fade-in">
-                <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="ユーザー名" className="text-xs px-3 py-2 outline-none w-32 bg-white border border-slate-200 rounded-lg focus:border-blue-500" />
-                <input type="text" value={newSystemId} onChange={e => setNewSystemId(e.target.value)} placeholder="システムID (数字)" className="text-xs px-3 py-2 outline-none w-40 bg-white border border-slate-200 rounded-lg font-mono focus:border-blue-500" />
-                <button onClick={handleAddTarget} className="bg-[#1A2130] hover:bg-slate-800 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">登録</button>
-                <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-slate-600 p-2"><X size={16}/></button>
+              <div className="flex items-center space-x-2 bg-slate-800/50 p-1.5 rounded-xl border border-slate-700 animate-in fade-in">
+                <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="Username" className="text-xs px-3 py-2 outline-none w-32 bg-slate-950 border border-slate-700 rounded-lg text-white focus:border-indigo-500 transition-colors" />
+                <input type="text" value={newSystemId} onChange={e => setNewSystemId(e.target.value)} placeholder="System ID" className="text-xs px-3 py-2 outline-none w-40 bg-slate-950 border border-slate-700 rounded-lg font-mono text-white focus:border-indigo-500 transition-colors" />
+                <button onClick={handleAddTarget} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">Add</button>
+                <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-slate-200 p-2 transition-colors"><X size={16}/></button>
               </div>
             ) : (
-              <button onClick={() => setIsAdding(true)} className="flex items-center text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-4 py-2 rounded-xl transition-colors">
-                <UserPlus size={14} className="mr-1.5" /> ライバーを追加
+              <button onClick={() => setIsAdding(true)} className="flex items-center text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl transition-all border border-slate-700 hover:border-slate-600 shadow-sm">
+                <UserPlus size={14} className="mr-2" /> Add Target
               </button>
             )}
           </div>
           
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[800px]">
+            <table className="w-full text-left border-collapse min-w-[900px]">
               <thead>
-                <tr className="bg-white text-xs font-bold text-slate-400 border-b-2 border-slate-100">
-                  <th className="p-4 pl-6">ライバー名</th>
-                  <th className="p-4 text-right">獲得コイン</th>
-                  <th className="p-4 text-center">ユニークリスナー</th>
-                  <th className="p-4 text-center">コアファン (1K+)</th>
-                  <th className="p-4 w-48">太客依存率 (TOP1)</th>
-                  <th className="p-4 text-center">ステータス</th>
-                  <th className="p-4 text-center pr-6">監視</th>
+                <tr className="bg-slate-950/50 text-[10px] uppercase tracking-wider font-black text-slate-500 border-b border-slate-800/80">
+                  <th className="p-4 pl-6">Target</th>
+                  <th className="p-4 text-right">Coins</th>
+                  <th className="p-4 text-center">Unique</th>
+                  <th className="p-4 text-center">Core(1K+)</th>
+                  <th className="p-4 w-48">Top1 Dependency</th>
+                  <th className="p-4 text-center">Health</th>
+                  <th className="p-4 text-center pr-6">Track</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-50">
+              <tbody className="divide-y divide-slate-800/50">
                 {stats.map((liver) => {
                   const isDanger = liver.dependency_rate >= 80 && liver.total_coins > 0;
                   const isSafe = liver.dependency_rate < 50 && liver.total_coins > 0;
                   const noData = liver.total_coins === 0;
+                  const isSelected = selectedLiverId === liver.system_id;
                   
                   return (
-                    <tr key={liver.system_id} className={`hover:bg-slate-50 transition-colors ${!liver.is_active ? 'opacity-40 grayscale' : ''}`}>
+                    <tr 
+                      key={liver.system_id} 
+                      onClick={() => setSelectedLiverId(liver.system_id)}
+                      className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30 grayscale' : ''}`}
+                    >
                       <td className="p-4 pl-6">
-                        <div className="font-black text-slate-900">{liver.username}</div>
-                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">{liver.system_id.slice(0, 10)}...</div>
+                        <div className={`font-bold ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>{liver.username}</div>
+                        <div className="text-[10px] text-slate-600 font-mono mt-0.5">{liver.system_id.slice(0, 10)}...</div>
                       </td>
-                      <td className="p-4 text-right font-bold text-slate-700">{liver.total_coins.toLocaleString()} <span className="text-[10px] text-slate-400">c</span></td>
-                      <td className="p-4 text-center font-bold text-slate-700">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <Users size={14} className="text-slate-400"/> {liver.unique_listeners.toLocaleString()}
-                        </div>
+                      <td className="p-4 text-right font-black text-slate-200">{liver.total_coins.toLocaleString()} <span className="text-[10px] text-slate-600 font-normal">c</span></td>
+                      <td className="p-4 text-center font-bold text-slate-300">
+                        <div className="flex items-center justify-center gap-1.5"><Users size={14} className="text-slate-500"/> {liver.unique_listeners.toLocaleString()}</div>
                       </td>
-                      <td className="p-4 text-center font-black text-blue-600">
+                      <td className="p-4 text-center font-black">
                         {liver.core_fans > 0 ? (
-                          <div className="flex items-center justify-center gap-1"><Flame size={14}/> {liver.core_fans.toLocaleString()}</div>
-                        ) : (
-                          <span className="text-slate-400">0</span>
-                        )}
+                          <div className="flex items-center justify-center gap-1 text-amber-400"><Flame size={14}/> {liver.core_fans.toLocaleString()}</div>
+                        ) : (<span className="text-slate-700">0</span>)}
                       </td>
                       <td className="p-4">
                         <div className="flex items-center gap-3">
-                          <span className="w-12 text-sm font-black text-slate-700 text-right">{liver.total_coins > 0 ? `${liver.dependency_rate}%` : '-'}</span>
-                          <div className="flex-grow h-2 bg-slate-100 rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full rounded-full ${isDanger ? 'bg-rose-500' : isSafe ? 'bg-emerald-500' : 'bg-amber-400'}`} 
-                              style={{ width: `${Math.min(liver.total_coins > 0 ? liver.dependency_rate : 0, 100)}%` }}
-                            ></div>
+                          <span className="w-12 text-xs font-black text-slate-300 text-right">{liver.total_coins > 0 ? `${liver.dependency_rate}%` : '-'}</span>
+                          <div className="flex-grow h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                            <div className={`h-full rounded-full transition-all duration-500 ${isDanger ? 'bg-rose-500' : isSafe ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(liver.total_coins > 0 ? liver.dependency_rate : 0, 100)}%` }}></div>
                           </div>
                         </div>
                       </td>
                       <td className="p-4 text-center">
-                        {noData ? <span className="text-xs font-bold text-slate-400">データなし</span>
-                         : isDanger ? <span className="text-xs font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-1 rounded">超危険</span>
-                         : isSafe ? <span className="text-xs font-bold text-emerald-600 bg-emerald-50 border border-emerald-100 px-2 py-1 rounded"><ShieldCheck size={12} className="inline mr-1" />健全</span>
-                         : <span className="text-xs font-bold text-amber-600 bg-amber-50 border border-amber-100 px-2 py-1 rounded">注意</span>}
+                        {noData ? <span className="text-[10px] font-bold text-slate-600 uppercase border border-slate-700 px-2 py-0.5 rounded">No Data</span>
+                         : isDanger ? <span className="text-[10px] font-black tracking-wider text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded uppercase inline-flex items-center gap-1 w-20 justify-center"><AlertTriangle size={12}/> Danger</span>
+                         : isSafe ? <span className="text-[10px] font-black tracking-wider text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded uppercase inline-flex items-center gap-1 w-20 justify-center"><ShieldCheck size={12}/> Safe</span>
+                         : <span className="text-[10px] font-black tracking-wider text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded uppercase inline-flex items-center gap-1 w-20 justify-center">Warning</span>}
                       </td>
-                      <td className="p-4 pr-6 text-center">
-                         <button 
-                          onClick={() => toggleStatus(liver.system_id, liver.is_active)}
-                          className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${liver.is_active ? 'bg-blue-500' : 'bg-slate-300'}`}
-                        >
+                      <td className="p-4 pr-6 text-center" onClick={(e) => e.stopPropagation()}>
+                         <button onClick={() => toggleStatus(liver.system_id, liver.is_active)} className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${liver.is_active ? 'bg-indigo-600' : 'bg-slate-700'}`}>
                           <span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${liver.is_active ? 'translate-x-5' : 'translate-x-1'}`} />
                         </button>
                       </td>
                     </tr>
                   );
                 })}
+                {stats.length === 0 && !loading && (
+                  <tr><td colSpan={7} className="p-8 text-center text-slate-500 text-sm">ライバーが登録されていません</td></tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
+
+        {/* 選択したライバーの詳細分析（グラフとログ） */}
+        {selectedLiverId && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[500px] animate-in fade-in slide-in-from-bottom-4">
+            <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col relative overflow-hidden backdrop-blur-md">
+              <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Activity size={120} /></div>
+              <h3 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-6 flex items-center justify-between">
+                <div className="flex items-center"><Activity className="mr-2 h-4 w-4 text-indigo-400" /> @{selectedLiverName} - Trend</div>
+                <span className="text-[10px] font-bold text-slate-500 bg-slate-950 px-3 py-1 rounded-full border border-slate-800">{activeTab === 'custom' ? 'Past Data' : 'Real-time'}</span>
+              </h3>
+              <div className="flex-grow w-full min-h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={chartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorCoins" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#818cf8" stopOpacity={0.4}/><stop offset="95%" stopColor="#818cf8" stopOpacity={0}/></linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                    <XAxis dataKey="time" stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} tickFormatter={(value) => `${value}`} />
+                    <Tooltip contentStyle={{ backgroundColor: '#020617', borderColor: '#1e293b', borderRadius: '8px', color: '#f8fafc' }} itemStyle={{ color: '#818cf8', fontWeight: 'bold' }} formatter={(value: any) => [`${value} ダイヤ`, '収益']} labelFormatter={(label) => `${label}`} />
+                    <Area type="monotone" dataKey="coins" stroke="#818cf8" strokeWidth={3} fillOpacity={1} fill="url(#colorCoins)" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col overflow-hidden backdrop-blur-md">
+              <h3 className="text-sm font-black text-slate-300 uppercase tracking-widest mb-4 flex items-center pb-4 border-b border-slate-800/80"><Coins className="mr-2 h-4 w-4 text-amber-400" />Recent Logs</h3>
+              <div className="flex-grow overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+                {detailLogs.map((log) => (
+                  <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-800/80 transition-colors border border-slate-800/50">
+                    <div className="flex flex-col overflow-hidden">
+                      <span className="font-bold text-slate-200 text-sm truncate">{log.viewers?.name || '不明'}</span>
+                      <span className="text-[10px] font-medium text-slate-500 mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
+                    </div>
+                    <div className="flex items-center bg-indigo-500/10 px-2 py-1 rounded-lg border border-indigo-500/20 whitespace-nowrap ml-2">
+                      <span className="font-black text-indigo-400 text-xs">+{log.coins}</span>
+                    </div>
+                  </div>
+                ))}
+                {detailLogs.length === 0 && (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-3"><Radio className="animate-pulse h-8 w-8 opacity-20" /><p className="text-xs font-bold uppercase tracking-widest">No Logs Found</p></div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
