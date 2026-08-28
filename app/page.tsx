@@ -5,7 +5,6 @@ import { supabase } from '../utils/supabase';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Activity, Coins, Users, Radio, Clock, Calendar, Globe } from 'lucide-react';
 import { format } from 'date-fns';
-import { ja } from 'date-fns/locale';
 
 type GiftLog = {
   id: number;
@@ -20,13 +19,10 @@ type DashboardStats = {
   total: number;
 };
 
-const TARGET_LIVER_DB_ID = '7594791795658145809';
-
 export default function Dashboard() {
   const [logs, setLogs] = useState<GiftLog[]>([]);
   const [stats, setStats] = useState<DashboardStats>({ today: 0, month: 0, total: 0 });
   const [activeTab, setActiveTab] = useState<'today' | 'month' | 'total'>('today');
-  const [isLive, setIsLive] = useState(true);
 
   useEffect(() => {
     fetchData();
@@ -34,20 +30,17 @@ export default function Dashboard() {
   }, []);
 
   const fetchData = async () => {
-    // 1. 最新のフィード用データ（直近50件のみ取得し軽くする）
+    // フィルターを解除し、純粋に最新50件を取得
     const { data: recentLogs } = await supabase
       .from('gift_logs')
       .select('id, created_at, coins, viewers(name)')
-      .eq('liver_id', TARGET_LIVER_DB_ID)
       .order('created_at', { ascending: false })
       .limit(50);
     
     if (recentLogs) setLogs(recentLogs as unknown as GiftLog[]);
 
-    // 2. RPC関数を使って、重い集計はSupabase側に任せる
-    const { data: statsData, error } = await supabase.rpc('get_dashboard_stats', {
-      target_liver_id: TARGET_LIVER_DB_ID
-    });
+    // 修正したRPC関数（ID指定なし）を呼び出す
+    const { data: statsData, error } = await supabase.rpc('get_dashboard_stats');
     
     if (statsData && !error) {
       setStats(statsData as DashboardStats);
@@ -74,7 +67,6 @@ export default function Dashboard() {
             viewers: { name: viewerData?.name || '不明なユーザー' },
           };
 
-          // 画面の更新（DBに負荷をかけずフロント側で数値を加算）
           setLogs((prev) => [newLog, ...prev].slice(0, 50));
           setStats((prev) => ({
             today: prev.today + payload.new.coins,
@@ -86,7 +78,6 @@ export default function Dashboard() {
       .subscribe();
   };
 
-  // グラフ用データの生成
   const chartData = logs.slice().reverse().map(log => ({
     time: format(new Date(log.created_at), 'HH:mm'),
     coins: log.coins
@@ -96,23 +87,12 @@ export default function Dashboard() {
     <div className="min-h-screen bg-slate-950 text-slate-50 p-4 md:p-8 font-sans selection:bg-indigo-500/30">
       <div className="max-w-7xl mx-auto space-y-8">
         
-        {/* ヘッダー */}
-        <header className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-6">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight text-white">
-              Hiyoko <span className="text-indigo-400">Analytics</span>
-            </h1>
-            <p className="text-slate-400 mt-1 text-sm">TikTok Live 収益トラッキングシステム</p>
-          </div>
-          <div className="flex items-center space-x-3 bg-slate-900/50 px-4 py-2 rounded-full border border-slate-800 backdrop-blur-sm">
-            <span className="relative flex h-3 w-3">
-              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${isLive ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
-              <span className={`relative inline-flex rounded-full h-3 w-3 ${isLive ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
-            </span>
-            <span className={`text-sm font-semibold tracking-wider ${isLive ? 'text-emerald-400' : 'text-rose-400'}`}>
-              {isLive ? 'システム稼働中' : 'オフライン'}
-            </span>
-          </div>
+        {/* ヘッダー（ダミーの稼働中バッジを削除） */}
+        <header className="border-b border-slate-800 pb-6">
+          <h1 className="text-3xl font-bold tracking-tight text-white">
+            Hiyoko <span className="text-indigo-400">Analytics</span>
+          </h1>
+          <p className="text-slate-400 mt-1 text-sm">TikTok Live 収益トラッキングシステム</p>
         </header>
 
         {/* 期間切り替えタブ */}
@@ -177,10 +157,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* メインコンテンツエリア */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[500px]">
           
-          {/* グラフエリア */}
           <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col">
             <h3 className="text-lg font-semibold text-slate-200 mb-6 flex items-center">
               <Activity className="mr-2 h-5 w-5 text-indigo-400" />
@@ -210,7 +188,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* リアルタイムフィードバックエリア */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col overflow-hidden">
             <h3 className="text-lg font-semibold text-slate-200 mb-4 flex items-center pb-4 border-b border-slate-800">
               <Coins className="mr-2 h-5 w-5 text-amber-400" />
