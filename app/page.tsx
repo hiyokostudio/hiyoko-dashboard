@@ -87,7 +87,6 @@ export default function Dashboard() {
 
   const fetchVips = async (systemId: string) => {
     const { startIso, endIso } = getTimeBounds();
-    // ★ここでアンダーバー付きになっていたタイポを systemId に修正しました！
     const { data } = await supabase.rpc('get_liver_vips', { p_system_id: systemId, p_start_date: startIso, p_end_date: endIso });
     if (data) setVipListeners(data as VipListener[]);
   };
@@ -321,17 +320,22 @@ export default function Dashboard() {
                     return (
                       <div 
                         key={vip.viewer_id} 
-                        onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})}
+                        onClick={(e) => {
+                          // ★ガード処理：<a>タグの中身がクリックされたらプロファイリングは開かない
+                          const target = e.target as HTMLElement;
+                          if (target.closest && target.closest('a')) return;
+                          setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name});
+                        }}
                         className={`flex items-center p-3 rounded-xl border transition-colors cursor-pointer group ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20' : 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-800/80'}`}
                       >
                         <div className="w-8 text-center flex-shrink-0">
                           {vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto group-hover:scale-110 transition-transform" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}
                         </div>
                         
-                        {/* アバター & 名前: HTMLの純粋な<a>タグで完全な別タブ遷移 */}
+                        {/* アバター & 名前: HTMLの純粋な<a>タグ */}
                         <div className="ml-2 flex-grow min-w-0 flex items-center gap-3 relative z-10">
                           {vip.unique_id ? (
-                            <a href={`https://www.tiktok.com/@${vip.unique_id}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-3 hover:opacity-80 group/link">
+                            <a href={`https://www.tiktok.com/@${vip.unique_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-80 group/link">
                               {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
                               <span className="font-bold text-sm truncate group-hover/link:underline decoration-slate-400 underline-offset-4 text-slate-200">
                                 {vip.viewer_name} <ExternalLink size={12} className="inline text-slate-500 ml-1 mb-0.5" />
