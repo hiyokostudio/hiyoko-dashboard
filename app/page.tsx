@@ -329,11 +329,14 @@ export default function Dashboard() {
                         
                         {/* アバター: クリックでTikTok遷移 */}
                         <div 
-                           className={`ml-2 flex-shrink-0 ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
+                           className={`ml-2 flex-shrink-0 relative ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
                            onClick={(e) => {
+                             e.preventDefault(); // デフォルトの動作をキャンセル
+                             e.stopPropagation(); // 親の onClick（プロファイリング展開）を完全ブロック
                              if (vip.unique_id) {
-                               e.stopPropagation();
                                window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                             } else {
+                               alert('TikTok IDがまだ取得されていません（次回ギフト受信時に取得されます）');
                              }
                            }}
                         >
@@ -346,9 +349,12 @@ export default function Dashboard() {
                             <span 
                               className={`font-bold text-sm truncate ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
                               onClick={(e) => {
+                                e.preventDefault(); // デフォルトの動作をキャンセル
+                                e.stopPropagation(); // 親の onClick（プロファイリング展開）を完全ブロック
                                 if (vip.unique_id) {
-                                  e.stopPropagation();
                                   window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                                } else {
+                                  alert('TikTok IDがまだ取得されていません（次回ギフト受信時に取得されます）');
                                 }
                               }}
                             >
@@ -357,7 +363,7 @@ export default function Dashboard() {
                             {vip.total_coins >= 1000 && <span className="text-[10px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded flex items-center"><Flame size={10} className="mr-0.5"/> コアファン</span>}
                           </div>
                           
-                          {/* ゲージ: 行全体クリックの恩恵でアナリティクス展開 */}
+                          {/* ゲージ */}
                           <div className="flex items-center gap-3 mt-1.5">
                             <div className="flex-grow h-1 bg-slate-800 rounded-full overflow-hidden">
                               <div className={`h-full rounded-full transition-all duration-500 ${vip.rank === 1 ? 'bg-amber-400' : vip.total_coins >= 1000 ? 'bg-orange-400' : 'bg-indigo-500'}`} style={{ width: `${contributionRate}%` }}></div>
