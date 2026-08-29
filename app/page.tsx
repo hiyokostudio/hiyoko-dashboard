@@ -299,11 +299,10 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* 究極の直感UX - VIP CRM ＆ 最新ログ */}
+        {/* VIP CRM ＆ 最新ログ */}
         {selectedLiverId && selectedLiver && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
             
-            {/* VIPリスト */}
             <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col relative overflow-hidden backdrop-blur-md h-[550px]">
               <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Crown size={120} /></div>
               <div className="flex items-center justify-between mb-6">
@@ -327,30 +326,28 @@ export default function Dashboard() {
                           {vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto group-hover:scale-110 transition-transform" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}
                         </div>
                         
-                        {/* アバター: window.open + e.stopPropagation */}
-                        <div className="ml-2 flex-shrink-0 relative z-10">
-                          <div 
-                            onClick={(e) => {
-                              e.preventDefault(); e.stopPropagation();
-                              if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
-                              else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
-                            }}
-                            className={`${vip.unique_id ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-                          >
-                            {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
-                          </div>
+                        {/* アバター: window.open + アラート統一 */}
+                        <div 
+                          className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
+                          onClick={(e) => {
+                            e.preventDefault(); e.stopPropagation();
+                            if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                            else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
+                          }}
+                        >
+                          {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
                         </div>
 
                         <div className="flex-grow ml-4 min-w-0">
                           <div className="flex items-center gap-3 relative z-10">
-                            {/* 名前: window.open + e.stopPropagation */}
+                            {/* 名前: window.open + アラート統一 */}
                             <span 
                               onClick={(e) => {
                                 e.preventDefault(); e.stopPropagation();
                                 if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
                                 else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
                               }}
-                              className={`font-bold text-sm truncate ${vip.unique_id ? 'cursor-pointer hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
+                              className={`font-bold text-sm truncate cursor-pointer ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
                             >
                               {vip.viewer_name} {vip.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
                             </span>
@@ -376,32 +373,33 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* 最新ログリスト */}
             <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col overflow-hidden backdrop-blur-md h-[550px]">
               <h3 className="text-sm font-black text-slate-300 mb-4 flex items-center pb-4 border-b border-slate-800/80"><Coins className="mr-2 h-4 w-4 text-emerald-400" />最新の受信ログ</h3>
               <div className="flex-grow overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
                 {detailLogs.map((log) => (
                   <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-800/80 transition-colors border border-slate-800/50">
                     <div className="flex items-center gap-3 overflow-hidden">
-                      {/* アバター: window.open + e.stopPropagation */}
+                      {/* ★ログのアバター: アラート追加 */}
                       <div 
-                        className={`flex-shrink-0 relative z-10 ${log.viewers?.unique_id ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                        className={`flex-shrink-0 relative z-10 cursor-pointer ${log.viewers?.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
                         onClick={(e) => {
                           e.preventDefault(); e.stopPropagation();
                           if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank');
+                          else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
                         }}
                       >
-                        {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover" alt=""/> : <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-xs">{log.viewers?.name.charAt(0) || '?'}</div>}
+                        {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover" alt=""/> : <AvatarFallback name={log.viewers?.name || '?'} />}
                       </div>
                       
-                      {/* 名前: window.open + e.stopPropagation */}
+                      {/* ★ログの名前: アラート追加 */}
                       <div className="flex flex-col overflow-hidden relative z-10">
                         <span 
                           onClick={(e) => {
                             e.preventDefault(); e.stopPropagation();
                             if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank');
+                            else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
                           }}
-                          className={`font-bold text-slate-200 text-sm truncate ${log.viewers?.unique_id ? 'cursor-pointer hover:underline decoration-slate-400 underline-offset-4' : ''}`}
+                          className={`font-bold text-slate-200 text-sm truncate cursor-pointer ${log.viewers?.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''}`}
                         >
                           {log.viewers?.name || '不明'} {log.viewers?.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
                         </span>
