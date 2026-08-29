@@ -105,7 +105,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const dowData = viewerProfile ? Object.keys(daysMap).map(d => ({ name: daysMap[d as keyof typeof daysMap], coins: viewerProfile.day_of_week?.[d] || 0 })) : [];
   const hodData = viewerProfile ? Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 })) : [];
 
-  // ★ TypeScriptエラーの原因を根絶した万能コンポーネント
   const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => {
     const initial = name ? name.charAt(0) : '?';
     return (
@@ -197,7 +196,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                       {vip.rank === 1 ? <Crown size={16} className="text-amber-400 mx-auto" /> : vip.rank === 2 ? <Award size={16} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={16} className="text-amber-700 mx-auto" /> : <span className="text-xs font-bold text-slate-500">{vip.rank}</span>}
                     </div>
                     
-                    {/* ★VIPアバター: window.open + アラート */}
                     <div 
                       className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
                       onClick={(e) => {
@@ -210,22 +208,37 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                     </div>
 
                     <div className="flex-grow ml-3 min-w-0">
-                      <div className="flex items-center gap-2 relative z-10">
-                        {/* ★VIP名前: window.open + アラート */}
-                        <span 
-                          onClick={(e) => {
-                            e.preventDefault(); e.stopPropagation();
-                            if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
-                            else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
-                          }}
-                          className={`font-bold text-[13px] truncate cursor-pointer ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
-                        >
-                          {vip.viewer_name} {vip.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
-                        </span>
-                        {isCore && <span className="text-[9px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1 py-0.5 rounded flex items-center"><Flame size={8} className="mr-0.5"/> Core</span>}
-                      </div>
-                      <div className="text-[10px] text-slate-500 font-medium mt-0.5 flex items-center">
-                        <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}
+                      <div className="flex flex-col relative z-10">
+                        <div className="flex items-center gap-2">
+                          <span 
+                            onClick={(e) => {
+                              e.preventDefault(); e.stopPropagation();
+                              if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                              else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
+                            }}
+                            className={`font-bold text-[13px] truncate cursor-pointer ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
+                          >
+                            {vip.viewer_name} {vip.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
+                          </span>
+                          {isCore && <span className="text-[9px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1 py-0.5 rounded flex items-center"><Flame size={8} className="mr-0.5"/> Core</span>}
+                        </div>
+                        
+                        {/* ★【最重要】ライバー画面のVIPにも @ID を常時併記 */}
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span 
+                            onClick={(e) => {
+                              e.preventDefault(); e.stopPropagation();
+                              if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                              else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
+                            }}
+                            className="text-[11px] font-mono font-semibold text-indigo-400/90 truncate cursor-pointer hover:underline"
+                          >
+                            {vip.unique_id ? `@${vip.unique_id}` : '@ID未取得'}
+                          </span>
+                          <span className="text-[10px] text-slate-500 font-medium flex items-center">
+                            <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -254,7 +267,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             {activeView === 'logs' && recentLogs.map((log, i) => (
               <div key={log.id} className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 ${i === 0 ? 'bg-indigo-600/10 border-indigo-500/30' : 'bg-slate-900/40 border-slate-800/50'}`}>
                 <div className="flex items-center gap-3 overflow-hidden">
-                  {/* ★ログのアバター: window.open + アラート */}
                   <div 
                     className={`flex-shrink-0 relative z-10 cursor-pointer ${log.viewers?.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
                     onClick={(e) => {
@@ -267,7 +279,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                   </div>
                   
                   <div className="flex flex-col overflow-hidden relative z-10">
-                    {/* ★ログの名前: window.open + アラート */}
                     <span 
                       onClick={(e) => {
                         e.preventDefault(); e.stopPropagation();
@@ -278,7 +289,13 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                     >
                       {log.viewers?.name || '不明'} {log.viewers?.unique_id && <ExternalLink size={10} className="text-slate-600"/>}
                     </span>
-                    <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</div>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {/* ★【最重要】ライバー画面のログ側にも @ID を常時併記 */}
+                      <span className="text-[11px] font-mono font-semibold text-indigo-400/90 truncate">
+                        {log.viewers?.unique_id ? `@${log.viewers.unique_id}` : '@ID未取得'}
+                      </span>
+                      <span className="text-[10px] text-slate-500 font-medium truncate">• {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
+                    </div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-3 py-1.5 rounded-xl border border-amber-500/20 flex-shrink-0 ml-2">
