@@ -87,7 +87,8 @@ export default function Dashboard() {
 
   const fetchVips = async (systemId: string) => {
     const { startIso, endIso } = getTimeBounds();
-    const { data } = await supabase.rpc('get_liver_vips', { p_system_id: system_id, p_start_date: startIso, p_end_date: endIso });
+    // ★ここでアンダーバー付きになっていたタイポを systemId に修正しました！
+    const { data } = await supabase.rpc('get_liver_vips', { p_system_id: systemId, p_start_date: startIso, p_end_date: endIso });
     if (data) setVipListeners(data as VipListener[]);
   };
 
