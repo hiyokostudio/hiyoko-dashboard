@@ -29,7 +29,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const [selectedViewer, setSelectedViewer] = useState<{id: string, name: string} | null>(null);
   const [viewerProfile, setViewerProfile] = useState<ListenerProfile | null>(null);
 
-  // ★追加：ライバー用の報酬率編集ステート
   const [isEditingRate, setIsEditingRate] = useState(false);
   const [editRateValue, setEditRateValue] = useState('');
 
@@ -96,11 +95,12 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     setLoading(false);
   };
 
-  // ★追加：ライバー自身が自分の報酬率を更新する処理
+  // ★修正：入力された数字（例：46.5）をそのまま保存するように変更
   const handleRateUpdate = async () => {
     const num = parseFloat(editRateValue);
     if (isNaN(num) || num < 0 || num > 100) return alert('正しい数値を入力してください');
-    const rateVal = Math.floor(num * 100);
+    
+    const rateVal = Number(num.toFixed(1)); // そのままの数字（小数点1位まで）
     const { error } = await supabase.from('target_livers').update({ reward_rate: rateVal }).eq('system_id', system_id);
     if (!error) {
       setIsEditingRate(false);
@@ -171,7 +171,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                 <p className="text-[10px] font-bold text-slate-500 uppercase">現在レート / 1K</p>
                 <div className="text-lg font-black text-slate-200 tabular-nums mt-0.5 flex items-center flex-wrap gap-y-1">
                   ${unitPriceUSD} 
-                  {/* ★ライバー用：自身の報酬率を編集するUI */}
                   {isEditingRate ? (
                     <div className="inline-flex items-center ml-1.5 bg-slate-900 rounded border border-indigo-500 pl-1 pr-0.5">
                       <input type="number" step="0.1" value={editRateValue} onChange={e => setEditRateValue(e.target.value)} className="w-12 bg-transparent text-[11px] text-white outline-none text-right font-mono" autoFocus />
@@ -181,10 +180,10 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                     </div>
                   ) : (
                     <span 
-                      onClick={() => { setIsEditingRate(true); setEditRateValue((liverInfo.reward_rate / 100).toString()); }}
+                      onClick={() => { setIsEditingRate(true); setEditRateValue(liverInfo.reward_rate.toString()); }}
                       className="text-[10px] text-emerald-400 font-bold ml-1.5 cursor-pointer hover:bg-emerald-500/20 px-1 py-0.5 rounded transition-colors inline-flex items-center bg-slate-900/50 border border-slate-800"
                     >
-                      ({(liverInfo.reward_rate / 100).toFixed(1)}%) <Edit2 size={8} className="ml-1 opacity-70"/>
+                      ({Number(liverInfo.reward_rate).toFixed(1)}%) <Edit2 size={8} className="ml-1 opacity-70"/>
                     </span>
                   )}
                 </div>

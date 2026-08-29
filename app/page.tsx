@@ -82,7 +82,7 @@ export default function Dashboard() {
     if (statsRes.data && ratesRes.data) {
       const merged = (statsRes.data as LiverStat[]).map(stat => {
         const rateData = ratesRes.data.find(r => r.system_id === stat.system_id);
-        return { ...stat, reward_rate: rateData?.reward_rate || 5000 };
+        return { ...stat, reward_rate: rateData?.reward_rate || 50 }; // ★修正: デフォルトもそのまま50
       });
       setStats(merged);
     }
@@ -271,7 +271,6 @@ export default function Dashboard() {
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('unique_listeners')}>ユニークリスナー <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('core_fans')}>コアファン (1K+) <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 w-48 cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('dependency_rate')}>太客依存率 (TOP1) <ArrowUpDown size={10} className="inline ml-1" /></th>
-                  {/* ★ 管理用は見るだけのシンプルな列に戻しました */}
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('reward_rate')}>報酬率 <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 text-center">健全度</th>
                   <th className="p-4 text-center pr-6">監視</th>
@@ -293,9 +292,9 @@ export default function Dashboard() {
                       <td className="p-4 text-center font-black">{liver.core_fans > 0 ? <div className="flex items-center justify-center gap-1 text-amber-400"><Flame size={14}/> {liver.core_fans.toLocaleString()}</div> : <span className="text-slate-700">0</span>}</td>
                       <td className="p-4"><div className="flex items-center gap-3"><span className="w-10 text-xs font-black text-slate-300 text-right">{liver.total_coins > 0 ? `${liver.dependency_rate}%` : '-'}</span><div className="flex-grow h-1.5 bg-slate-800 rounded-full overflow-hidden"><div className={`h-full rounded-full ${isDanger ? 'bg-rose-500' : isSafe ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(liver.total_coins > 0 ? liver.dependency_rate : 0, 100)}%` }}></div></div></div></td>
                       
-                      {/* ★ 管理画面用：設定されている報酬率を表示するだけ */}
+                      {/* ★修正: 100で割らずにそのまま表示 */}
                       <td className="p-4 text-center">
-                        <span className="font-bold text-slate-300 text-sm">{(liver.reward_rate / 100).toFixed(1)}%</span>
+                        <span className="font-bold text-slate-300 text-sm">{Number(liver.reward_rate).toFixed(1)}%</span>
                       </td>
 
                       <td className="p-4 text-center">
