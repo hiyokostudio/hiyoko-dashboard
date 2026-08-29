@@ -169,7 +169,6 @@ export default function Dashboard() {
   const dowData = viewerProfile ? Object.keys(daysMap).map(d => ({ name: daysMap[d as keyof typeof daysMap], coins: viewerProfile.day_of_week?.[d] || 0 })) : [];
   const hodData = viewerProfile ? Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 })) : [];
 
-  // ★ TypeScriptエラーの原因になっていた部分を修正し、サイズ指定可能な万能コンポーネントに進化
   const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => {
     const initial = name ? name.charAt(0) : '?';
     return (
@@ -274,7 +273,7 @@ export default function Dashboard() {
                   return (
                     <tr key={liver.system_id} onClick={() => setSelectedLiverId(liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
                       <td className="p-4 pl-6 flex items-center gap-3">
-                        {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-8 h-8 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.username} size="w-8 h-8" textSize="text-xs" />}
+                        {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-8 h-8 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-xs">{liver.username.charAt(0)}</div>}
                         <div><div className={`font-bold ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>{liver.username}</div><div className="text-[10px] text-slate-600 font-mono mt-0.5">{liver.system_id.slice(0, 10)}...</div></div>
                       </td>
                       <td className="p-4 text-right font-black text-slate-200">{liver.total_coins.toLocaleString()} <span className="text-[10px] text-slate-600 font-normal">ダイヤ</span></td>
@@ -310,6 +309,7 @@ export default function Dashboard() {
         {selectedLiverId && selectedLiver && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
             
+            {/* VIP CRM */}
             <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col relative overflow-hidden backdrop-blur-md h-[550px]">
               <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Crown size={120} /></div>
               <div className="flex items-center justify-between mb-6">
@@ -333,7 +333,7 @@ export default function Dashboard() {
                           {vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto group-hover:scale-110 transition-transform" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}
                         </div>
                         
-                        {/* アバター: window.open + アラート */}
+                        {/* アバター */}
                         <div 
                           className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
                           onClick={(e) => {
@@ -346,103 +346,15 @@ export default function Dashboard() {
                         </div>
 
                         <div className="flex-grow ml-4 min-w-0">
-                          <div className="flex items-center gap-3 relative z-10">
-                            {/* 名前: window.open + アラート */}
-                            <span 
-                              onClick={(e) => {
-                                e.preventDefault(); e.stopPropagation();
-                                if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
-                                else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
-                              }}
-                              className={`font-bold text-sm truncate cursor-pointer ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
-                            >
-                              {vip.viewer_name} {vip.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
-                            </span>
-                            {vip.total_coins >= 1000 && <span className="text-[10px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded flex items-center"><Flame size={10} className="mr-0.5"/> コアファン</span>}
-                          </div>
-                          
-                          <div className="flex items-center gap-3 mt-1.5">
-                            <div className="flex-grow h-1 bg-slate-800 rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full transition-all duration-500 ${vip.rank === 1 ? 'bg-amber-400' : vip.total_coins >= 1000 ? 'bg-orange-400' : 'bg-indigo-500'}`} style={{ width: `${contributionRate}%` }}></div>
-                            </div>
-                            <span className="text-[10px] font-mono text-slate-500 w-8 text-right hidden sm:block">{contributionRate.toFixed(1)}%</span>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col items-end ml-4 flex-shrink-0">
-                          <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                          <span className="text-[10px] text-slate-500">ダイヤ</span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col overflow-hidden backdrop-blur-md h-[550px]">
-              <h3 className="text-sm font-black text-slate-300 mb-4 flex items-center pb-4 border-b border-slate-800/80"><Coins className="mr-2 h-4 w-4 text-emerald-400" />最新の受信ログ</h3>
-              <div className="flex-grow overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                {detailLogs.map((log) => (
-                  <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-800/80 transition-colors border border-slate-800/50">
-                    <div className="flex items-center gap-3 overflow-hidden">
-                      {/* ★ログのアバター: window.open + アラート */}
-                      <div 
-                        className={`flex-shrink-0 relative z-10 cursor-pointer ${log.viewers?.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
-                        onClick={(e) => {
-                          e.preventDefault(); e.stopPropagation();
-                          if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank');
-                          else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
-                        }}
-                      >
-                        {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover" alt=""/> : <AvatarFallback name={log.viewers?.name || '?'} size="w-8 h-8" textSize="text-xs" />}
-                      </div>
-                      
-                      {/* ★ログの名前: window.open + アラート */}
-                      <div className="flex flex-col overflow-hidden relative z-10">
-                        <span 
-                          onClick={(e) => {
-                            e.preventDefault(); e.stopPropagation();
-                            if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank');
-                            else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
-                          }}
-                          className={`font-bold text-slate-200 text-sm truncate cursor-pointer ${log.viewers?.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''}`}
-                        >
-                          {log.viewers?.name || '不明'} {log.viewers?.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
-                        </span>
-                        <span className="text-[10px] font-medium text-slate-500 mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20 whitespace-nowrap ml-2"><span className="font-black text-emerald-400 text-xs">+{log.coins}</span></div>
-                  </div>
-                ))}
-              </div>
-            </div>
-            
-          </div>
-        )}
-
-        {/* リスナープロファイリング モーダル */}
-        {selectedViewer && viewerProfile && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedViewer(null)}>
-            <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 max-w-3xl w-full shadow-2xl relative overflow-hidden" onClick={e => e.stopPropagation()}>
-              <button onClick={() => setSelectedViewer(null)} className="absolute top-6 right-6 text-slate-400 hover:text-white transition-colors bg-slate-800 p-2 rounded-full"><X size={20}/></button>
-              <div className="mb-8">
-                <h2 className="text-2xl font-black text-white flex items-center"><BarChart2 className="mr-3 text-indigo-400" /> {selectedViewer.name} <span className="text-sm font-medium text-slate-500 ml-4 border border-slate-700 px-3 py-1 rounded-full">リスナー分析</span></h2>
-                <div className="flex gap-8 mt-6">
-                  <div><p className="text-xs text-slate-400 font-bold mb-1">総支援額</p><p className="text-2xl font-black text-amber-400">{viewerProfile.total_coins.toLocaleString()} <span className="text-sm text-slate-500 font-normal">ダイヤ</span></p></div>
-                  <div><p className="text-xs text-slate-400 font-bold mb-1">初回来訪</p><p className="text-sm font-bold text-slate-200 mt-2">{format(parseISO(viewerProfile.first_seen), 'yyyy/MM/dd HH:mm')}</p></div>
-                  <div><p className="text-xs text-slate-400 font-bold mb-1">最終来訪</p><p className="text-sm font-bold text-slate-200 mt-2">{format(parseISO(viewerProfile.last_seen), 'yyyy/MM/dd HH:mm')}</p></div>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                <div className="bg-slate-950/50 p-5 rounded-2xl border border-slate-800/80 h-[250px] flex flex-col"><h4 className="text-xs font-bold text-slate-400 mb-4">曜日別 投下トレンド</h4><ResponsiveContainer width="100%" height="100%"><BarChart data={dowData}><CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} /><XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} /><Tooltip cursor={{fill: '#1e293b'}} contentStyle={{ backgroundColor: '#020617', borderColor: '#334155', borderRadius: '8px' }} itemStyle={{ color: '#818cf8', fontWeight: 'bold' }} /><Bar dataKey="coins" fill="#818cf8" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div>
-                <div className="bg-slate-950/50 p-5 rounded-2xl border border-slate-800/80 h-[250px] flex flex-col"><h4 className="text-xs font-bold text-slate-400 mb-4">時間帯別 投下トレンド (0-23時)</h4><ResponsiveContainer width="100%" height="100%"><BarChart data={hodData}><CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} /><XAxis dataKey="name" stroke="#64748b" fontSize={10} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={10} /><Tooltip cursor={{fill: '#1e293b'}} contentStyle={{ backgroundColor: '#020617', borderColor: '#334155', borderRadius: '8px' }} itemStyle={{ color: '#10b981', fontWeight: 'bold' }} /><Bar dataKey="coins" fill="#10b981" radius={[4, 4, 0, 0]} /></BarChart></ResponsiveContainer></div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+                          <div className="flex flex-col relative z-10">
+                            <div className="flex items-center gap-2">
+                              {/* 表示名 */}
+                              <span 
+                                onClick={(e) => {
+                                  e.preventDefault(); e.stopPropagation();
+                                  if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                                  else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
+                                }}
+                                className={`font-bold text-sm truncate cursor-pointer ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
+                              >
+                                {vip.viewer_name} {vip.
