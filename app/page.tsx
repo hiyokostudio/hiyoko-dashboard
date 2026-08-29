@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
@@ -43,19 +45,35 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (activeTab !== 'custom') fetchIntelligenceData();
-    const channel = supabase.channel('public:gift_logs')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, async (payload) => {
-        if (activeTab !== 'custom') fetchIntelligenceData();
-        if (selectedLiverId && String(selectedLiverId) === String(payload.new.liver_id)) {
-            fetchDetailLogs(selectedLiverId);
-            fetchVips(selectedLiverId);
-        }
-      }).subscribe();
-    return () => { supabase.removeChannel(channel); };
+    
+    // 選択されていない時は全体のログを監視（マトリックス更新用）
+    if (!selectedLiverId) {
+      const channel = supabase.channel('public:gift_logs')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, () => {
+          if (activeTab !== 'custom') fetchIntelligenceData();
+        }).subscribe();
+      return () => { supabase.removeChannel(channel); };
+    }
   }, [activeTab, selectedLiverId]);
 
   useEffect(() => {
-    if (selectedLiverId) { fetchDetailLogs(selectedLiverId); fetchVips(selectedLiverId); }
+    // 選択されている時は、そのライバー専用のリアルタイム通信（サーバーサイドフィルター）に切り替え
+    if (selectedLiverId) {
+      fetchDetailLogs(selectedLiverId); 
+      fetchVips(selectedLiverId);
+
+      const channel = supabase.channel(`public:gift_logs:${selectedLiverId}`)
+        .on('postgres_changes', { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'gift_logs',
+          filter: `liver_id=eq.${selectedLiverId}` // サーバー側でフィルター（JavaScriptの桁落ちを回避）
+        }, () => {
+          fetchDetailLogs(selectedLiverId);
+          fetchVips(selectedLiverId);
+        }).subscribe();
+      return () => { supabase.removeChannel(channel); };
+    }
   }, [selectedLiverId, activeTab]);
 
   useEffect(() => {
@@ -82,13 +100,13 @@ export default function Dashboard() {
     const { startIso, endIso } = getTimeBounds();
     const [statsRes, metaRes] = await Promise.all([
       supabase.rpc('get_intelligence_stats', { p_start_date: startIso, p_end_date: endIso }),
-      supabase.from('target_livers').select('system_id, reward_rate, pin_code, liver_name')
+      supabase.from('target_livers').select('system_id, username, reward_rate, pin_code, liver_name, avatar_url')
     ]);
 
     if (statsRes.data && metaRes.data) {
       const merged = (statsRes.data as LiverStat[]).map(stat => {
         const meta = metaRes.data.find(r => r.system_id === stat.system_id);
-        return { ...stat, reward_rate: meta?.reward_rate || 50, pin_code: meta?.pin_code || '0000', liver_name: meta?.liver_name };
+        return { ...stat, reward_rate: meta?.reward_rate || 50, pin_code: meta?.pin_code || '0000', liver_name: meta?.liver_name, avatar_url: meta?.avatar_url };
       });
       setStats(merged);
     }
@@ -277,18 +295,6 @@ export default function Dashboard() {
               <button onClick={() => setActiveTab('total')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'total' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><Globe size={14} className="mr-1.5" /> 全期間</button>
               <button onClick={() => setActiveTab('custom')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'custom' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><CalendarSearch size={14} className="mr-1.5" /> 期間指定</button>
             </div>
-            {activeTab === 'custom' && (
-              <div className="flex items-center space-x-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800 shadow-inner animate-in fade-in">
-                <div className="bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors">
-                  <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full h-full bg-transparent text-xs px-3 py-2 outline-none font-bold text-slate-300 cursor-pointer [color-scheme:dark]" />
-                </div>
-                <span className="text-slate-500">〜</span>
-                <div className="bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors">
-                  <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full h-full bg-transparent text-xs px-3 py-2 outline-none font-bold text-slate-300 cursor-pointer [color-scheme:dark]" />
-                </div>
-                <button onClick={handleCustomFetch} disabled={!startDate || !endDate} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">解析実行</button>
-              </div>
-            )}
           </div>
         </header>
 

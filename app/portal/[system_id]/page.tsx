@@ -1,3 +1,5 @@
+export const dynamic = 'force-dynamic';
+
 'use client';
 
 import { useEffect, useState, use } from 'react';
@@ -67,10 +69,13 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
 
   useEffect(() => {
     const channel = supabase.channel(`portal:${system_id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, async (payload) => {
-        if (String(payload.new.liver_id) === String(system_id)) {
-          fetchData(); 
-        }
+      .on('postgres_changes', { 
+        event: 'INSERT', 
+        schema: 'public', 
+        table: 'gift_logs',
+        filter: `liver_id=eq.${system_id}` // サーバー側でフィルター
+      }, async () => {
+        fetchData(); 
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [system_id, activePeriod, startDate, endDate]);
