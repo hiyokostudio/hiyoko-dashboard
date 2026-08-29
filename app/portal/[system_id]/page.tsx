@@ -14,7 +14,6 @@ type LiverStat = { system_id: string; username: string; is_active: boolean; tota
 export default function LiverPortal({ params }: { params: Promise<{ system_id: string }> }) {
   const { system_id } = use(params);
   
-  // ★ liver_name（表示名）を追加
   const [liverInfo, setLiverInfo] = useState<{ username: string; liver_name?: string; avatar_url: string | null; reward_rate: number; pin_code: string } | null>(null);
   const [liverStat, setLiverStat] = useState<LiverStat | null>(null);
   const [exchangeRate, setExchangeRate] = useState(145.00);
@@ -108,7 +107,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const fetchData = async () => {
     setLoading(true);
     if (!liverInfo) {
-      // ★ liver_name も一緒に取得する
       const { data: liver } = await supabase.from('target_livers').select('username, liver_name, avatar_url, reward_rate, pin_code').eq('system_id', system_id).single();
       if (liver) setLiverInfo(liver as any);
       try { const res = await fetch('/api/exchange'); const data = await res.json(); if (data.rate) setExchangeRate(data.rate); } catch (e) {}
@@ -165,7 +163,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         <div className="z-10 flex flex-col items-center w-full max-w-sm px-8">
           {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-20 h-20 rounded-full border border-slate-700 object-cover mb-4 shadow-xl" alt=""/> : <AvatarFallback name={liverInfo.liver_name || liverInfo.username} size="w-20 h-20" textSize="text-2xl" />}
           
-          {/* ★ 修正: ロック画面も「表示名」と「@ID」の美しい階層構造に */}
           <h1 className="text-xl font-black text-white mb-1">{liverInfo.liver_name || liverInfo.username}</h1>
           <p className="text-[11px] font-mono font-semibold text-indigo-400/80 mb-8 tracking-wider">@{liverInfo.username}</p>
           
@@ -218,7 +215,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           <div className="flex items-center gap-4">
             {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-12 h-12 rounded-full border-2 border-indigo-500/50 object-cover shadow-[0_0_15px_rgba(99,102,241,0.4)]" alt=""/> : <AvatarFallback name={liverInfo.liver_name || liverInfo.username} size="w-12 h-12" textSize="text-xl" />}
             <div className="flex flex-col">
-              {/* ★ 修正: ポータル画面からもダサいシステムIDを完全排除 */}
               <h1 className="text-xl font-black tracking-tight text-white leading-tight">{liverInfo.liver_name || liverInfo.username}</h1>
               <span className="text-[12px] font-mono font-semibold text-indigo-400/90 mt-0.5 tracking-wider">@{liverInfo.username}</span>
             </div>

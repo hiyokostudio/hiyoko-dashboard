@@ -82,7 +82,6 @@ export default function Dashboard() {
   const fetchIntelligenceData = async () => {
     setLoading(true); 
     const { startIso, endIso } = getTimeBounds();
-    // ★ target_livers から liver_name も一緒に取得
     const [statsRes, metaRes] = await Promise.all([
       supabase.rpc('get_intelligence_stats', { p_start_date: startIso, p_end_date: endIso }),
       supabase.from('target_livers').select('system_id, reward_rate, pin_code, liver_name')
@@ -130,7 +129,6 @@ export default function Dashboard() {
       const res = await fetch(`/api/tiktok/profile?username=${cleanUsername}`);
       const data = await res.json();
       if (res.ok && data.userId) {
-        // ★ 取得した nickname (表示名) も渡す
         await executeAddLiver(data.userId, cleanUsername, data.avatarUrl, data.nickname);
       } else {
         alert('TikTokからの自動取得がブロックされました。システムIDを手動で入力してください。');
@@ -151,7 +149,6 @@ export default function Dashboard() {
       if (avatarUrl) updateData.avatar_url = avatarUrl;
       if (nickname) updateData.liver_name = nickname;
       
-      // アバターか表示名があればDBをアップデート
       if (Object.keys(updateData).length > 0) {
         await supabase.from('target_livers').update(updateData).eq('system_id', systemId);
       }
@@ -361,7 +358,7 @@ export default function Dashboard() {
                   const isSafe = liver.dependency_rate < 50 && liver.total_coins > 0;
                   const isSelected = selectedLiverId === liver.system_id;
                   return (
-                    // ★ 修正: クリック時にすでに選択中なら解除（null）にするトグル仕様
+                    // ★ 選択中のものをもう一度押したら解除（null）にする
                     <tr key={liver.system_id} onClick={() => setSelectedLiverId(prev => prev === liver.system_id ? null : liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
                       <td className="p-4 pl-6 flex items-center gap-3 relative z-10">
                         <div 
@@ -370,7 +367,7 @@ export default function Dashboard() {
                         >
                           {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-9 h-9 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />}
                           <div className="flex flex-col">
-                            {/* ★ 修正: メインテキストを「表示名（ニックネーム）」にし、システムIDを排除 */}
+                            {/* ★ 表示名（上段）と @ID（下段）を確実に両方表示する */}
                             <div className={`font-bold flex items-center gap-1 group-hover/link:underline underline-offset-4 decoration-slate-400 ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>
                               {liver.liver_name || liver.username} <ExternalLink size={10} className="text-slate-500" />
                             </div>
@@ -451,7 +448,7 @@ export default function Dashboard() {
               <div className="flex items-center justify-between mb-6 relative z-10">
                 <h3 className="text-sm font-black text-slate-300 flex items-center">
                   <Crown className="mr-2 h-5 w-5 text-amber-400" /> 
-                  {/* ★修正: 詳細ヘッダーも「表示名」を優先 */}
+                  {/* ★ 詳細ヘッダーも「表示名」と「@ID」を意識 */}
                   {selectedLiver.liver_name || selectedLiver.username} - 貢献度ランキング (VIP CRM)
                 </h3>
                 <div className="flex items-center gap-2">
