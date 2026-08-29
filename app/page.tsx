@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Edit2, Check } from 'lucide-react';
+import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 type LiverStat = { system_id: string; username: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; };
@@ -32,10 +32,6 @@ export default function Dashboard() {
   const [selectedViewer, setSelectedViewer] = useState<{id: string, name: string} | null>(null);
   const [viewerProfile, setViewerProfile] = useState<ListenerProfile | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-
-  // 報酬率編集用のState
-  const [editingRate, setEditingRate] = useState<string | null>(null);
-  const [editRateValue, setEditRateValue] = useState<string>('');
 
   useEffect(() => {
     if (activeTab !== 'custom') fetchIntelligenceData();
@@ -118,20 +114,6 @@ export default function Dashboard() {
     if (!error) { setNewUsername(''); setNewSystemId(''); setIsAdding(false); fetchIntelligenceData(); } else alert('追加失敗');
   };
   const toggleStatus = async (systemId: string, current: boolean) => { await supabase.from('target_livers').update({ is_active: !current }).eq('system_id', systemId); fetchIntelligenceData(); };
-
-  // 報酬率の保存処理
-  const handleRateUpdate = async (systemId: string) => {
-    const num = parseFloat(editRateValue);
-    if (isNaN(num) || num < 0 || num > 100) return alert('0から100までの正しい数値を入力してください');
-    const rateVal = Math.floor(num * 100); // 50.5% -> 5050 に変換
-    const { error } = await supabase.from('target_livers').update({ reward_rate: rateVal }).eq('system_id', systemId);
-    if (!error) {
-      setEditingRate(null);
-      fetchIntelligenceData();
-    } else {
-      alert('更新に失敗しました');
-    }
-  };
 
   const handleExportCSV = async () => {
     setIsExporting(true);
@@ -289,6 +271,7 @@ export default function Dashboard() {
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('unique_listeners')}>ユニークリスナー <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('core_fans')}>コアファン (1K+) <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 w-48 cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('dependency_rate')}>太客依存率 (TOP1) <ArrowUpDown size={10} className="inline ml-1" /></th>
+                  {/* ★ 管理用は見るだけのシンプルな列に戻しました */}
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('reward_rate')}>報酬率 <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 text-center">健全度</th>
                   <th className="p-4 text-center pr-6">監視</th>
@@ -310,23 +293,9 @@ export default function Dashboard() {
                       <td className="p-4 text-center font-black">{liver.core_fans > 0 ? <div className="flex items-center justify-center gap-1 text-amber-400"><Flame size={14}/> {liver.core_fans.toLocaleString()}</div> : <span className="text-slate-700">0</span>}</td>
                       <td className="p-4"><div className="flex items-center gap-3"><span className="w-10 text-xs font-black text-slate-300 text-right">{liver.total_coins > 0 ? `${liver.dependency_rate}%` : '-'}</span><div className="flex-grow h-1.5 bg-slate-800 rounded-full overflow-hidden"><div className={`h-full rounded-full ${isDanger ? 'bg-rose-500' : isSafe ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(liver.total_coins > 0 ? liver.dependency_rate : 0, 100)}%` }}></div></div></div></td>
                       
-                      {/* ★ 追加: 報酬率エディタ */}
-                      <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>
-                        {editingRate === liver.system_id ? (
-                          <div className="flex items-center justify-center gap-1">
-                            <input type="number" step="0.1" value={editRateValue} onChange={e => setEditRateValue(e.target.value)} className="w-16 bg-slate-950 border border-indigo-500 rounded px-1 py-0.5 text-xs text-center text-white outline-none" autoFocus />
-                            <button onClick={() => handleRateUpdate(liver.system_id)} className="text-emerald-400 hover:text-emerald-300"><Check size={14}/></button>
-                            <button onClick={() => setEditingRate(null)} className="text-slate-500 hover:text-slate-300"><X size={14}/></button>
-                          </div>
-                        ) : (
-                          <div 
-                            className="flex items-center justify-center gap-1.5 group/rate cursor-pointer border border-transparent hover:border-slate-700 hover:bg-slate-800/50 px-2 py-1 rounded transition-colors"
-                            onClick={() => { setEditingRate(liver.system_id); setEditRateValue((liver.reward_rate / 100).toString()); }}
-                          >
-                            <span className="font-bold text-slate-300">{(liver.reward_rate / 100).toFixed(1)}%</span>
-                            <Edit2 size={10} className="text-slate-600 group-hover/rate:text-indigo-400" />
-                          </div>
-                        )}
+                      {/* ★ 管理画面用：設定されている報酬率を表示するだけ */}
+                      <td className="p-4 text-center">
+                        <span className="font-bold text-slate-300 text-sm">{(liver.reward_rate / 100).toFixed(1)}%</span>
                       </td>
 
                       <td className="p-4 text-center">

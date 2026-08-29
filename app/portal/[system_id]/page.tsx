@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from 'react';
 import { supabase } from '@/utils/supabase';
-import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, Activity, ShieldCheck, AlertTriangle, Clock, X, BarChart2 } from 'lucide-react';
+import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, Activity, ShieldCheck, AlertTriangle, Clock, X, BarChart2, Edit2, Check } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -28,6 +28,10 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
 
   const [selectedViewer, setSelectedViewer] = useState<{id: string, name: string} | null>(null);
   const [viewerProfile, setViewerProfile] = useState<ListenerProfile | null>(null);
+
+  // ★追加：ライバー用の報酬率編集ステート
+  const [isEditingRate, setIsEditingRate] = useState(false);
+  const [editRateValue, setEditRateValue] = useState('');
 
   const getTimeBounds = () => {
     let startIso = null; let endIso = null; const now = new Date();
@@ -92,6 +96,20 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     setLoading(false);
   };
 
+  // ★追加：ライバー自身が自分の報酬率を更新する処理
+  const handleRateUpdate = async () => {
+    const num = parseFloat(editRateValue);
+    if (isNaN(num) || num < 0 || num > 100) return alert('正しい数値を入力してください');
+    const rateVal = Math.floor(num * 100);
+    const { error } = await supabase.from('target_livers').update({ reward_rate: rateVal }).eq('system_id', system_id);
+    if (!error) {
+      setIsEditingRate(false);
+      setLiverInfo(prev => prev ? { ...prev, reward_rate: rateVal } : prev);
+    } else {
+      alert('更新に失敗しました');
+    }
+  };
+
   if (loading && !liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-indigo-500 animate-pulse">CONNECTING...</div>;
   if (!liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-rose-500">LIVER NOT FOUND</div>;
 
@@ -148,7 +166,30 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             <div className="mt-4 flex items-center gap-4 border-t border-slate-800/80 pt-3">
               <div className="flex-1"><p className="text-[10px] font-bold text-slate-500 uppercase">獲得ダイヤ</p><p className="text-lg font-black text-slate-200 tabular-nums flex items-center gap-1.5 mt-0.5"><Coins size={12} className="text-amber-400"/> {totalCoins.toLocaleString()}</p></div>
               <div className="w-px h-8 bg-slate-800"></div>
-              <div className="flex-1"><p className="text-[10px] font-bold text-slate-500 uppercase">現在レート / 1K</p><p className="text-lg font-black text-slate-200 tabular-nums mt-0.5">${unitPriceUSD} <span className="text-[10px] text-emerald-400 font-bold ml-0.5">({liverInfo.reward_rate}%)</span></p></div>
+              
+              <div className="flex-1">
+                <p className="text-[10px] font-bold text-slate-500 uppercase">現在レート / 1K</p>
+                <div className="text-lg font-black text-slate-200 tabular-nums mt-0.5 flex items-center flex-wrap gap-y-1">
+                  ${unitPriceUSD} 
+                  {/* ★ライバー用：自身の報酬率を編集するUI */}
+                  {isEditingRate ? (
+                    <div className="inline-flex items-center ml-1.5 bg-slate-900 rounded border border-indigo-500 pl-1 pr-0.5">
+                      <input type="number" step="0.1" value={editRateValue} onChange={e => setEditRateValue(e.target.value)} className="w-12 bg-transparent text-[11px] text-white outline-none text-right font-mono" autoFocus />
+                      <span className="text-[10px] text-slate-400 mr-1">%</span>
+                      <button onClick={handleRateUpdate} className="text-emerald-400 p-1 hover:bg-slate-800 rounded"><Check size={12}/></button>
+                      <button onClick={() => setIsEditingRate(false)} className="text-slate-500 p-1 hover:bg-slate-800 rounded"><X size={12}/></button>
+                    </div>
+                  ) : (
+                    <span 
+                      onClick={() => { setIsEditingRate(true); setEditRateValue((liverInfo.reward_rate / 100).toString()); }}
+                      className="text-[10px] text-emerald-400 font-bold ml-1.5 cursor-pointer hover:bg-emerald-500/20 px-1 py-0.5 rounded transition-colors inline-flex items-center bg-slate-900/50 border border-slate-800"
+                    >
+                      ({(liverInfo.reward_rate / 100).toFixed(1)}%) <Edit2 size={8} className="ml-1 opacity-70"/>
+                    </span>
+                  )}
+                </div>
+              </div>
+
             </div>
           </div>
 
@@ -223,7 +264,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                           {isCore && <span className="text-[9px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1 py-0.5 rounded flex items-center"><Flame size={8} className="mr-0.5"/> Core</span>}
                         </div>
                         
-                        {/* ★【最重要】ライバー画面のVIPにも @ID を常時併記 */}
                         <div className="flex items-center gap-2 mt-0.5">
                           <span 
                             onClick={(e) => {
@@ -290,7 +330,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                       {log.viewers?.name || '不明'} {log.viewers?.unique_id && <ExternalLink size={10} className="text-slate-600"/>}
                     </span>
                     <div className="flex items-center gap-2 mt-0.5">
-                      {/* ★【最重要】ライバー画面のログ側にも @ID を常時併記 */}
                       <span className="text-[11px] font-mono font-semibold text-indigo-400/90 truncate">
                         {log.viewers?.unique_id ? `@${log.viewers.unique_id}` : '@ID未取得'}
                       </span>
