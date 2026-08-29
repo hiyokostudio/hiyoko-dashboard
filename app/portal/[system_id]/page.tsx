@@ -47,9 +47,9 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   };
 
   useEffect(() => {
-    // ★ タイポを修正：new URLSearchParams が正解
     const urlParams = new URLSearchParams(window.location.search);
     const godmode = urlParams.get('godmode');
+    
     if (godmode === adminMasterKey) {
       setIsUnlocked(true);
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -67,8 +67,10 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
 
   useEffect(() => {
     const channel = supabase.channel(`portal:${system_id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs', filter: `liver_id=eq.${system_id}` }, async () => {
-        fetchData(); 
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, async (payload) => {
+        if (String(payload.new.liver_id) === String(system_id)) {
+          fetchData(); 
+        }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [system_id, activePeriod, startDate, endDate]);
@@ -110,7 +112,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     if (logsRes) setRecentLogs(logsRes as unknown as GiftLog[]);
     
     const { data: vips } = await supabase.rpc('get_liver_vips', { p_system_id: system_id, p_start_date: startIso, p_end_date: endIso });
-    if (vips) setVipListeners(vips as VipListener[]);
+    setVipListeners(vips ? (vips as VipListener[]) : []);
 
     const { data: iData } = await supabase.rpc('get_intelligence_stats', { p_start_date: startIso, p_end_date: endIso });
     if (iData) {
@@ -295,6 +297,13 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           </div>
           
           <div className="flex-grow overflow-y-auto space-y-2.5 pr-2 pb-6 scrollbar-none">
+            {activeView === 'vips' && vipListeners.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-48 text-slate-600">
+                <Users size={48} className="opacity-20 mb-4" />
+                <p className="font-bold text-sm uppercase tracking-widest">No Listeners</p>
+                <p className="text-xs mt-1">指定期間のデータがありません</p>
+              </div>
+            )}
             {activeView === 'vips' && vipListeners.map((vip) => {
               const contributionRate = totalCoins > 0 ? (vip.total_coins / totalCoins) * 100 : 0;
               const isCore = vip.total_coins >= 1000;
@@ -377,8 +386,14 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                 </div>
               );
             })}
-            {activeView === 'vips' && vipListeners.length === 0 && <div className="text-center py-10 text-slate-600 text-xs font-bold uppercase tracking-widest flex flex-col items-center justify-center"><Users className="mb-2 opacity-20" size={24}/> No Listeners</div>}
 
+            {activeView === 'logs' && recentLogs.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-48 text-slate-600">
+                <Search size={48} className="opacity-20 mb-4" />
+                <p className="font-bold text-sm uppercase tracking-widest">No Logs</p>
+                <p className="text-xs mt-1">指定期間のログがありません</p>
+              </div>
+            )}
             {activeView === 'logs' && recentLogs.map((log, i) => (
               <div key={log.id} className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 ${i === 0 ? 'bg-indigo-600/10 border-indigo-500/30' : 'bg-slate-900/40 border-slate-800/50'}`}>
                 <div className="flex items-center gap-3 overflow-hidden">
@@ -417,7 +432,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                 </div>
               </div>
             ))}
-            {activeView === 'logs' && recentLogs.length === 0 && <div className="text-center py-10 text-slate-600 text-xs font-bold uppercase tracking-widest flex flex-col items-center justify-center"><Search className="mb-2 opacity-20" size={24}/> No Logs</div>}
           </div>
         </div>
 

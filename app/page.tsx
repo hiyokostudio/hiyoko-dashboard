@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2 } from 'lucide-react';
+import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2, Search } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 type LiverStat = { system_id: string; username: string; liver_name?: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; pin_code: string; };
@@ -41,31 +41,12 @@ export default function Dashboard() {
 
   const adminMasterKey = "hiyoko_god_mode_2026";
 
-  // ★自己修復機能：ライバーを選択した時、名前（liver_name）が空っぽなら裏でコッソリ自動取得する
-  useEffect(() => {
-    if (!selectedLiverId) return;
-    const liver = stats.find(s => s.system_id === selectedLiverId);
-    if (liver && !liver.liver_name) {
-      fetch(`/api/tiktok/profile?username=${liver.username}`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.nickname) {
-            supabase.from('target_livers').update({ liver_name: data.nickname }).eq('system_id', liver.system_id)
-              .then(() => fetchIntelligenceData()); // 取得したら画面をリフレッシュ
-          }
-        }).catch(() => {});
-    }
-  }, [selectedLiverId]);
-
   useEffect(() => {
     if (activeTab !== 'custom') fetchIntelligenceData();
     const channel = supabase.channel('public:gift_logs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, async (payload) => {
         if (activeTab !== 'custom') fetchIntelligenceData();
-        
-        // ★バグ修正：数値(Number)と文字列(String)の型不一致を String() で強制的に合わせて解決！
         if (selectedLiverId && String(selectedLiverId) === String(payload.new.liver_id)) {
-            // 手動での状態追加をやめ、データベースから最新の50件を確実に再取得する安全な設計に変更
             fetchDetailLogs(selectedLiverId);
             fetchVips(selectedLiverId);
         }
@@ -124,7 +105,7 @@ export default function Dashboard() {
   const fetchVips = async (systemId: string) => {
     const { startIso, endIso } = getTimeBounds();
     const { data } = await supabase.rpc('get_liver_vips', { p_system_id: systemId, p_start_date: startIso, p_end_date: endIso });
-    if (data) setVipListeners(data as VipListener[]);
+    setVipListeners(data ? (data as VipListener[]) : []);
   };
 
   const fetchViewerProfile = async (liverId: string, viewerId: string) => {
@@ -389,15 +370,17 @@ export default function Dashboard() {
                   return (
                     <tr key={liver.system_id} onClick={() => setSelectedLiverId(prev => prev === liver.system_id ? null : liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
                       <td className="p-4 pl-6 flex items-center gap-3 relative z-10">
-                        {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-9 h-9 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />}
-                        <div className="flex flex-col">
-                          <div className={`font-bold flex items-center gap-1 ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>
-                            {liver.liver_name || liver.username} 
-                            <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.tiktok.com/@${liver.username}`, '_blank'); }} className="p-1 hover:bg-slate-800 rounded text-slate-500 hover:text-indigo-400 transition-colors">
-                              <ExternalLink size={12} />
-                            </button>
+                        <div className="flex items-center gap-3 cursor-pointer group/link hover:opacity-80 transition-opacity">
+                          {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-9 h-9 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />}
+                          <div className="flex flex-col">
+                            <div className={`font-bold flex items-center gap-1 ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>
+                              {liver.liver_name || liver.username} 
+                              <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.tiktok.com/@${liver.username}`, '_blank'); }} className="p-1 hover:bg-slate-800 rounded text-slate-500 hover:text-indigo-400 transition-colors">
+                                <ExternalLink size={12} />
+                              </button>
+                            </div>
+                            <div className="text-[11px] font-mono font-semibold text-indigo-400/90 mt-0.5">@{liver.username}</div>
                           </div>
-                          <div className="text-[11px] font-mono font-semibold text-indigo-400/90">@{liver.username}</div>
                         </div>
                       </td>
                       <td className="p-4 text-right font-black text-slate-200">{liver.total_coins.toLocaleString()} <span className="text-[10px] text-slate-600 font-normal">ダイヤ</span></td>
@@ -489,77 +472,85 @@ export default function Dashboard() {
               </div>
               
               <div className="flex-grow overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-                <div className="space-y-3">
-                  {vipListeners.map((vip) => {
-                    const contributionRate = selectedLiverTotalCoins > 0 ? (vip.total_coins / selectedLiverTotalCoins) * 100 : 0;
-                    
-                    return (
-                      <div 
-                        key={vip.viewer_id} 
-                        onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})}
-                        className={`flex items-center p-3 rounded-xl border transition-colors cursor-pointer group ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20' : 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-800/80'}`}
-                      >
-                        <div className="w-8 text-center flex-shrink-0">
-                          {vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto group-hover:scale-110 transition-transform" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}
-                        </div>
-                        
+                {vipListeners.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-600">
+                    <Users size={48} className="opacity-20 mb-4" />
+                    <p className="font-bold text-sm uppercase tracking-widest">No Listeners</p>
+                    <p className="text-xs mt-1">指定期間のデータがありません</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {vipListeners.map((vip) => {
+                      const contributionRate = selectedLiverTotalCoins > 0 ? (vip.total_coins / selectedLiverTotalCoins) * 100 : 0;
+                      
+                      return (
                         <div 
-                          className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
-                          onClick={(e) => {
-                            e.preventDefault(); e.stopPropagation();
-                            if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
-                            else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
-                          }}
+                          key={vip.viewer_id} 
+                          onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})}
+                          className={`flex items-center p-3 rounded-xl border transition-colors cursor-pointer group ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20' : 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-800/80'}`}
                         >
-                          {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
-                        </div>
+                          <div className="w-8 text-center flex-shrink-0">
+                            {vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto group-hover:scale-110 transition-transform" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}
+                          </div>
+                          
+                          <div 
+                            className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
+                            onClick={(e) => {
+                              e.preventDefault(); e.stopPropagation();
+                              if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                              else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
+                            }}
+                          >
+                            {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
+                          </div>
 
-                        <div className="flex-grow ml-4 min-w-0">
-                          <div className="flex flex-col relative z-10">
-                            <div className="flex items-center gap-2">
+                          <div className="flex-grow ml-4 min-w-0">
+                            <div className="flex flex-col relative z-10">
+                              <div className="flex items-center gap-2">
+                                <span 
+                                  onClick={(e) => {
+                                    e.preventDefault(); e.stopPropagation();
+                                    if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                                    else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
+                                  }}
+                                  className={`font-bold text-sm truncate cursor-pointer ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
+                                >
+                                  {vip.viewer_name} {vip.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
+                                </span>
+                                {vip.total_coins >= 1000 && <span className="text-[10px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded flex items-center"><Flame size={10} className="mr-0.5"/> コアファン</span>}
+                              </div>
+                              
                               <span 
                                 onClick={(e) => {
                                   e.preventDefault(); e.stopPropagation();
                                   if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
                                   else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
                                 }}
-                                className={`font-bold text-sm truncate cursor-pointer ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
+                                className="text-[11px] font-mono font-semibold text-indigo-400/90 truncate cursor-pointer mt-0.5 hover:underline"
                               >
-                                {vip.viewer_name} {vip.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
+                                {vip.unique_id ? `@${vip.unique_id}` : '@ID未取得'}
                               </span>
-                              {vip.total_coins >= 1000 && <span className="text-[10px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded flex items-center"><Flame size={10} className="mr-0.5"/> コアファン</span>}
                             </div>
                             
-                            <span 
-                              onClick={(e) => {
-                                e.preventDefault(); e.stopPropagation();
-                                if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
-                                else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
-                              }}
-                              className="text-[11px] font-mono font-semibold text-indigo-400/90 truncate cursor-pointer mt-0.5 hover:underline"
-                            >
-                              {vip.unique_id ? `@${vip.unique_id}` : '@ID未取得'}
+                            <div className="flex items-center gap-3 mt-1.5">
+                              <div className="flex-grow h-1 bg-slate-800 rounded-full overflow-hidden">
+                                <div className={`h-full rounded-full transition-all duration-500 ${vip.rank === 1 ? 'bg-amber-400' : vip.total_coins >= 1000 ? 'bg-orange-400' : 'bg-indigo-500'}`} style={{ width: `${contributionRate}%` }}></div>
+                              </div>
+                              <span className="text-[10px] font-mono text-slate-500 w-8 text-right hidden sm:block">{contributionRate.toFixed(1)}%</span>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col items-end ml-4 flex-shrink-0">
+                            <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
+                            <span className="text-[10px] text-slate-500 font-medium flex items-center mt-1">
+                              <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}
                             </span>
                           </div>
-                          
-                          <div className="flex items-center gap-3 mt-1.5">
-                            <div className="flex-grow h-1 bg-slate-800 rounded-full overflow-hidden">
-                              <div className={`h-full rounded-full transition-all duration-500 ${vip.rank === 1 ? 'bg-amber-400' : vip.total_coins >= 1000 ? 'bg-orange-400' : 'bg-indigo-500'}`} style={{ width: `${contributionRate}%` }}></div>
-                            </div>
-                            <span className="text-[10px] font-mono text-slate-500 w-8 text-right hidden sm:block">{contributionRate.toFixed(1)}%</span>
-                          </div>
                         </div>
-
-                        <div className="flex flex-col items-end ml-4 flex-shrink-0">
-                          <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                          <span className="text-[10px] text-slate-500 font-medium flex items-center mt-1">
-                            <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -613,6 +604,7 @@ export default function Dashboard() {
                     </div>
                   );
                 })}
+                {detailLogs.length === 0 && <div className="text-center py-10 text-slate-600 text-xs font-bold uppercase tracking-widest flex flex-col items-center justify-center"><Search className="mb-2 opacity-20" size={24}/> No Logs</div>}
               </div>
             </div>
             
