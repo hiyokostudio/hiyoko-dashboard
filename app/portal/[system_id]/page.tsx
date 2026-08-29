@@ -66,13 +66,9 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   }, [activePeriod, startDate, endDate, system_id]);
 
   useEffect(() => {
-    const channel = supabase.channel(`portal:${system_id}`)
-      .on('postgres_changes', { 
-        event: 'INSERT', 
-        schema: 'public', 
-        table: 'gift_logs',
-        filter: `liver_id=eq.${system_id}`
-      }, async () => {
+    // ★ 巨大数値の丸め込み回避：画面側でID比較せず、ログが飛んできたらとりあえず全体更新
+    const channel = supabase.channel(`portal:gift_logs_all`)
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, () => {
         fetchData(); 
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -114,8 +110,14 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     const { data: logsRes } = await query;
     if (logsRes) setRecentLogs(logsRes as unknown as GiftLog[]);
     
-    const { data: vips } = await supabase.rpc('get_liver_vips', { p_system_id: system_id, p_start_date: startIso, p_end_date: endIso });
-    setVipListeners(vips ? (vips as VipListener[]) : []);
+    // ★ 日付型エラー回避：空文字を送らず、パラメータを安全に構築して渡す
+    const params: any = { p_system_id: system_id };
+    if (startIso) params.p_start_date = startIso;
+    if (endIso) params.p_end_date = endIso;
+
+    const { data, error } = await supabase.rpc('get_liver_vips', params);
+    if (error) console.error("VIP取得エラー:", error);
+    setVipListeners(data ? (data as VipListener[]) : []);
 
     const { data: iData } = await supabase.rpc('get_intelligence_stats', { p_start_date: startIso, p_end_date: endIso });
     if (iData) {

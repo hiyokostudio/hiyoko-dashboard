@@ -44,32 +44,21 @@ export default function Dashboard() {
   useEffect(() => {
     if (activeTab !== 'custom') fetchIntelligenceData();
     
-    if (!selectedLiverId) {
-      const channel = supabase.channel('public:gift_logs')
-        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, () => {
-          if (activeTab !== 'custom') fetchIntelligenceData();
-        }).subscribe();
-      return () => { supabase.removeChannel(channel); };
-    }
+    // ★ 巨大数値の丸め込み問題を回避するため、ID比較をせず「ギフトが来たら全体を更新する」という最強にシンプルな方法に変更
+    const channel = supabase.channel('public:gift_logs_all')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, () => {
+        if (activeTab !== 'custom') fetchIntelligenceData();
+        if (selectedLiverId) {
+          fetchDetailLogs(selectedLiverId);
+          fetchVips(selectedLiverId);
+        }
+      }).subscribe();
+    
+    return () => { supabase.removeChannel(channel); };
   }, [activeTab, selectedLiverId]);
 
   useEffect(() => {
-    if (selectedLiverId) {
-      fetchDetailLogs(selectedLiverId); 
-      fetchVips(selectedLiverId);
-
-      const channel = supabase.channel(`public:gift_logs:${selectedLiverId}`)
-        .on('postgres_changes', { 
-          event: 'INSERT', 
-          schema: 'public', 
-          table: 'gift_logs',
-          filter: `liver_id=eq.${selectedLiverId}`
-        }, () => {
-          fetchDetailLogs(selectedLiverId);
-          fetchVips(selectedLiverId);
-        }).subscribe();
-      return () => { supabase.removeChannel(channel); };
-    }
+    if (selectedLiverId) { fetchDetailLogs(selectedLiverId); fetchVips(selectedLiverId); }
   }, [selectedLiverId, activeTab]);
 
   useEffect(() => {
@@ -118,7 +107,13 @@ export default function Dashboard() {
 
   const fetchVips = async (systemId: string) => {
     const { startIso, endIso } = getTimeBounds();
-    const { data } = await supabase.rpc('get_liver_vips', { p_system_id: systemId, p_start_date: startIso, p_end_date: endIso });
+    // ★ 日付型エラー回避：空文字を送らず、パラメータを安全に構築して渡す
+    const params: any = { p_system_id: systemId };
+    if (startIso) params.p_start_date = startIso;
+    if (endIso) params.p_end_date = endIso;
+
+    const { data, error } = await supabase.rpc('get_liver_vips', params);
+    if (error) console.error("VIP取得エラー:", error);
     setVipListeners(data ? (data as VipListener[]) : []);
   };
 
