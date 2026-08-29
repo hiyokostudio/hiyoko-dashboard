@@ -229,7 +229,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* マトリックス (ライバー一覧) */}
         <div className="bg-slate-900/80 rounded-3xl shadow-lg border border-slate-800 overflow-hidden backdrop-blur-md">
           <div className="p-5 border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/50">
             <h3 className="text-sm font-black text-slate-200">ライバー分析マトリックス {healthFilter !== 'all' && <span className="text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded ml-2">フィルター適用中</span>}</h3>
@@ -304,6 +303,7 @@ export default function Dashboard() {
         {selectedLiverId && selectedLiver && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
             
+            {/* VIPリスト */}
             <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col relative overflow-hidden backdrop-blur-md h-[550px]">
               <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Crown size={120} /></div>
               <div className="flex items-center justify-between mb-6">
@@ -320,48 +320,54 @@ export default function Dashboard() {
                     return (
                       <div 
                         key={vip.viewer_id} 
-                        onClick={(e) => {
-                          // ★ガード処理：<a>タグの中身がクリックされたらプロファイリングは開かない
-                          const target = e.target as HTMLElement;
-                          if (target.closest && target.closest('a')) return;
-                          setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name});
-                        }}
+                        onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})}
                         className={`flex items-center p-3 rounded-xl border transition-colors cursor-pointer group ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20' : 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-800/80'}`}
                       >
                         <div className="w-8 text-center flex-shrink-0">
                           {vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto group-hover:scale-110 transition-transform" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}
                         </div>
                         
-                        {/* アバター & 名前: HTMLの純粋な<a>タグ */}
-                        <div className="ml-2 flex-grow min-w-0 flex items-center gap-3 relative z-10">
-                          {vip.unique_id ? (
-                            <a href={`https://www.tiktok.com/@${vip.unique_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-80 group/link">
-                              {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
-                              <span className="font-bold text-sm truncate group-hover/link:underline decoration-slate-400 underline-offset-4 text-slate-200">
-                                {vip.viewer_name} <ExternalLink size={12} className="inline text-slate-500 ml-1 mb-0.5" />
-                              </span>
-                            </a>
-                          ) : (
-                            <div className="flex items-center gap-3">
-                              {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
-                              <span className="font-bold text-sm truncate text-slate-300">{vip.viewer_name}</span>
-                            </div>
-                          )}
-                          {vip.total_coins >= 1000 && <span className="text-[10px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded flex items-center"><Flame size={10} className="mr-0.5"/> コアファン</span>}
+                        {/* アバター: window.open + e.stopPropagation */}
+                        <div className="ml-2 flex-shrink-0 relative z-10">
+                          <div 
+                            onClick={(e) => {
+                              e.preventDefault(); e.stopPropagation();
+                              if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                              else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
+                            }}
+                            className={`${vip.unique_id ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                          >
+                            {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
+                          </div>
                         </div>
-                        
-                        {/* ゲージとダイヤ数 */}
-                        <div className="flex items-center gap-4 flex-shrink-0 w-1/3 min-w-[120px]">
-                          <div className="flex-grow flex items-center gap-3 mt-1.5">
+
+                        <div className="flex-grow ml-4 min-w-0">
+                          <div className="flex items-center gap-3 relative z-10">
+                            {/* 名前: window.open + e.stopPropagation */}
+                            <span 
+                              onClick={(e) => {
+                                e.preventDefault(); e.stopPropagation();
+                                if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                                else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
+                              }}
+                              className={`font-bold text-sm truncate ${vip.unique_id ? 'cursor-pointer hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
+                            >
+                              {vip.viewer_name} {vip.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
+                            </span>
+                            {vip.total_coins >= 1000 && <span className="text-[10px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded flex items-center"><Flame size={10} className="mr-0.5"/> コアファン</span>}
+                          </div>
+                          
+                          <div className="flex items-center gap-3 mt-1.5">
                             <div className="flex-grow h-1 bg-slate-800 rounded-full overflow-hidden">
                               <div className={`h-full rounded-full transition-all duration-500 ${vip.rank === 1 ? 'bg-amber-400' : vip.total_coins >= 1000 ? 'bg-orange-400' : 'bg-indigo-500'}`} style={{ width: `${contributionRate}%` }}></div>
                             </div>
                             <span className="text-[10px] font-mono text-slate-500 w-8 text-right hidden sm:block">{contributionRate.toFixed(1)}%</span>
                           </div>
-                          <div className="flex flex-col items-end flex-shrink-0">
-                            <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                            <span className="text-[10px] text-slate-500">ダイヤ</span>
-                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end ml-4 flex-shrink-0">
+                          <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
+                          <span className="text-[10px] text-slate-500">ダイヤ</span>
                         </div>
                       </div>
                     );
@@ -370,29 +376,37 @@ export default function Dashboard() {
               </div>
             </div>
 
+            {/* 最新ログリスト */}
             <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col overflow-hidden backdrop-blur-md h-[550px]">
               <h3 className="text-sm font-black text-slate-300 mb-4 flex items-center pb-4 border-b border-slate-800/80"><Coins className="mr-2 h-4 w-4 text-emerald-400" />最新の受信ログ</h3>
               <div className="flex-grow overflow-y-auto space-y-2 pr-2 scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
                 {detailLogs.map((log) => (
                   <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-800/80 transition-colors border border-slate-800/50">
                     <div className="flex items-center gap-3 overflow-hidden">
-                      {log.viewers?.unique_id ? (
-                        <a href={`https://www.tiktok.com/@${log.viewers.unique_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-80 group/link">
-                          {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover flex-shrink-0" alt=""/> : <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-xs">{log.viewers?.name.charAt(0)}</div>}
-                          <div className="flex flex-col overflow-hidden">
-                            <span className="font-bold text-slate-200 text-sm truncate group-hover/link:underline decoration-slate-400 underline-offset-4">{log.viewers?.name || '不明'}</span>
-                            <span className="text-[10px] font-medium text-slate-500 mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
-                          </div>
-                        </a>
-                      ) : (
-                        <div className="flex items-center gap-3">
-                          {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover flex-shrink-0" alt=""/> : <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-xs">{log.viewers?.name.charAt(0)}</div>}
-                          <div className="flex flex-col overflow-hidden">
-                            <span className="font-bold text-slate-300 text-sm truncate">{log.viewers?.name || '不明'}</span>
-                            <span className="text-[10px] font-medium text-slate-500 mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
-                          </div>
-                        </div>
-                      )}
+                      {/* アバター: window.open + e.stopPropagation */}
+                      <div 
+                        className={`flex-shrink-0 relative z-10 ${log.viewers?.unique_id ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                        onClick={(e) => {
+                          e.preventDefault(); e.stopPropagation();
+                          if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank');
+                        }}
+                      >
+                        {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover" alt=""/> : <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-xs">{log.viewers?.name.charAt(0) || '?'}</div>}
+                      </div>
+                      
+                      {/* 名前: window.open + e.stopPropagation */}
+                      <div className="flex flex-col overflow-hidden relative z-10">
+                        <span 
+                          onClick={(e) => {
+                            e.preventDefault(); e.stopPropagation();
+                            if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank');
+                          }}
+                          className={`font-bold text-slate-200 text-sm truncate ${log.viewers?.unique_id ? 'cursor-pointer hover:underline decoration-slate-400 underline-offset-4' : ''}`}
+                        >
+                          {log.viewers?.name || '不明'} {log.viewers?.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
+                        </span>
+                        <span className="text-[10px] font-medium text-slate-500 mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
+                      </div>
                     </div>
                     <div className="flex items-center bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20 whitespace-nowrap ml-2"><span className="font-black text-emerald-400 text-xs">+{log.coins}</span></div>
                   </div>
