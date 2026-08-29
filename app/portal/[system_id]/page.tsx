@@ -47,9 +47,8 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   };
 
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
+    const urlParams = newSearchParams(window.location.search);
     const godmode = urlParams.get('godmode');
-    
     if (godmode === adminMasterKey) {
       setIsUnlocked(true);
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -67,15 +66,9 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
 
   useEffect(() => {
     const channel = supabase.channel(`portal:${system_id}`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs', filter: `liver_id=eq.${system_id}` }, async (payload) => {
-        const { startIso, endIso } = getTimeBounds();
-        const logTime = new Date(payload.new.created_at).getTime();
-        const startTime = startIso ? new Date(startIso).getTime() : 0;
-        const endTime = endIso ? new Date(endIso).getTime() : Infinity;
-        
-        if (logTime >= startTime && logTime <= endTime) {
-          fetchData(); 
-        }
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs', filter: `liver_id=eq.${system_id}` }, async () => {
+        // ★バグ修正：配信中に手動計算せず、シンプルに画面全体を再取得させることで確実に同期する
+        fetchData(); 
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [system_id, activePeriod, startDate, endDate]);
@@ -116,7 +109,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     const { data: logsRes } = await query;
     if (logsRes) setRecentLogs(logsRes as unknown as GiftLog[]);
     
-    // ★ 修正された不変の初見日を含むVIPデータを取得
     const { data: vips } = await supabase.rpc('get_liver_vips', { p_system_id: system_id, p_start_date: startIso, p_end_date: endIso });
     if (vips) setVipListeners(vips as VipListener[]);
 
@@ -160,11 +152,8 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         <div className="z-10 flex flex-col items-center w-full max-w-sm px-8">
           {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-20 h-20 rounded-full border border-slate-700 object-cover mb-4 shadow-xl" alt=""/> : <AvatarFallback name={liverInfo.liver_name || liverInfo.username} size="w-20 h-20" textSize="text-2xl" />}
           
-          {/* ★ ロック画面も表示名と@IDを確実に2つ並べる */}
-          <div className="flex flex-col items-center justify-center">
-            <h1 className="text-xl font-black text-white mb-1">{liverInfo.liver_name || liverInfo.username}</h1>
-            <p className="text-[11px] font-mono font-semibold text-indigo-400/80 mb-8 tracking-wider">@{liverInfo.username}</p>
-          </div>
+          <h1 className="text-xl font-black text-white mb-1">{liverInfo.liver_name || liverInfo.username}</h1>
+          <p className="text-[11px] font-mono font-semibold text-indigo-400/80 mb-8 tracking-wider">@{liverInfo.username}</p>
           
           <div className={`flex gap-5 mb-12 ${pinError ? 'animate-[shake_0.4s_ease-in-out]' : ''}`}>
             {[0, 1, 2, 3].map(i => (
@@ -215,7 +204,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           <div className="flex items-center gap-4">
             {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-12 h-12 rounded-full border-2 border-indigo-500/50 object-cover shadow-[0_0_15px_rgba(99,102,241,0.4)]" alt=""/> : <AvatarFallback name={liverInfo.liver_name || liverInfo.username} size="w-12 h-12" textSize="text-xl" />}
             <div className="flex flex-col">
-              {/* ★ メインポータルのヘッダーも「表示名」と「@ID」を確実に2個表示 */}
               <h1 className="text-xl font-black tracking-tight text-white leading-tight">{liverInfo.liver_name || liverInfo.username}</h1>
               <span className="text-[12px] font-mono font-semibold text-indigo-400/90 mt-0.5 tracking-wider">@{liverInfo.username}</span>
             </div>
@@ -360,7 +348,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                           >
                             {vip.unique_id ? `@${vip.unique_id}` : '@ID未取得'}
                           </span>
-                          {/* ★ 不変の「絶対的な初見日」がブレずに表示される */}
                           <span className="text-[10px] text-slate-500 font-medium flex items-center">
                             <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}
                           </span>

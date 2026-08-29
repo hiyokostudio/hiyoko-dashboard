@@ -41,15 +41,32 @@ export default function Dashboard() {
 
   const adminMasterKey = "hiyoko_god_mode_2026";
 
+  // ★自己修復機能：ライバーを選択した時、名前（liver_name）が空っぽなら裏でコッソリ自動取得する
+  useEffect(() => {
+    if (!selectedLiverId) return;
+    const liver = stats.find(s => s.system_id === selectedLiverId);
+    if (liver && !liver.liver_name) {
+      fetch(`/api/tiktok/profile?username=${liver.username}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.nickname) {
+            supabase.from('target_livers').update({ liver_name: data.nickname }).eq('system_id', liver.system_id)
+              .then(() => fetchIntelligenceData()); // 取得したら画面をリフレッシュ
+          }
+        }).catch(() => {});
+    }
+  }, [selectedLiverId]);
+
   useEffect(() => {
     if (activeTab !== 'custom') fetchIntelligenceData();
     const channel = supabase.channel('public:gift_logs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, async (payload) => {
         if (activeTab !== 'custom') fetchIntelligenceData();
-        if (selectedLiverId && selectedLiverId === payload.new.liver_id) {
-            const { data: viewerData } = await supabase.from('viewers').select('name, unique_id, avatar_url').eq('id', payload.new.viewer_id).single();
-            const newLog: GiftLog = { id: payload.new.id, created_at: payload.new.created_at, coins: payload.new.coins, viewers: { name: viewerData?.name || '不明', unique_id: viewerData?.unique_id, avatar_url: viewerData?.avatar_url } };
-            setDetailLogs(prev => [newLog, ...prev].slice(0, 50));
+        
+        // ★バグ修正：数値(Number)と文字列(String)の型不一致を String() で強制的に合わせて解決！
+        if (selectedLiverId && String(selectedLiverId) === String(payload.new.liver_id)) {
+            // 手動での状態追加をやめ、データベースから最新の50件を確実に再取得する安全な設計に変更
+            fetchDetailLogs(selectedLiverId);
             fetchVips(selectedLiverId);
         }
       }).subscribe();
@@ -106,7 +123,7 @@ export default function Dashboard() {
 
   const fetchVips = async (systemId: string) => {
     const { startIso, endIso } = getTimeBounds();
-    const { data, error } = await supabase.rpc('get_liver_vips', { p_system_id: systemId, p_start_date: startIso, p_end_date: endIso });
+    const { data } = await supabase.rpc('get_liver_vips', { p_system_id: systemId, p_start_date: startIso, p_end_date: endIso });
     if (data) setVipListeners(data as VipListener[]);
   };
 
@@ -279,6 +296,18 @@ export default function Dashboard() {
               <button onClick={() => setActiveTab('total')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'total' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><Globe size={14} className="mr-1.5" /> 全期間</button>
               <button onClick={() => setActiveTab('custom')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'custom' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><CalendarSearch size={14} className="mr-1.5" /> 期間指定</button>
             </div>
+            {activeTab === 'custom' && (
+              <div className="flex items-center space-x-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800 shadow-inner animate-in fade-in">
+                <div className="bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors">
+                  <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full h-full bg-transparent text-xs px-3 py-2 outline-none font-bold text-slate-300 cursor-pointer [color-scheme:dark]" />
+                </div>
+                <span className="text-slate-500">〜</span>
+                <div className="bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors">
+                  <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full h-full bg-transparent text-xs px-3 py-2 outline-none font-bold text-slate-300 cursor-pointer [color-scheme:dark]" />
+                </div>
+                <button onClick={handleCustomFetch} disabled={!startDate || !endDate} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">解析実行</button>
+              </div>
+            )}
           </div>
         </header>
 
@@ -358,15 +387,12 @@ export default function Dashboard() {
                   const isSafe = liver.dependency_rate < 50 && liver.total_coins > 0;
                   const isSelected = selectedLiverId === liver.system_id;
                   return (
-                    // ★ 修正1: どこを押してもトグルで開閉できるようクリックを活かす
                     <tr key={liver.system_id} onClick={() => setSelectedLiverId(prev => prev === liver.system_id ? null : liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
                       <td className="p-4 pl-6 flex items-center gap-3 relative z-10">
                         {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-9 h-9 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />}
                         <div className="flex flex-col">
-                          {/* ★ 修正2: 「表示名」と「@ID」を確実に2個表示 */}
                           <div className={`font-bold flex items-center gap-1 ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>
                             {liver.liver_name || liver.username} 
-                            {/* ★ 修正3: TikTokへのリンクは「アイコン」だけにして、行のクリックを妨害しない */}
                             <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.tiktok.com/@${liver.username}`, '_blank'); }} className="p-1 hover:bg-slate-800 rounded text-slate-500 hover:text-indigo-400 transition-colors">
                               <ExternalLink size={12} />
                             </button>
@@ -445,7 +471,6 @@ export default function Dashboard() {
               <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Crown size={120} /></div>
               
               <div className="flex items-center justify-between mb-6 relative z-10">
-                {/* ★ 修正4: CRMのヘッダーでも「表示名」と「@ID」を確実に併記 */}
                 <div className="flex items-center gap-2">
                   <Crown className="h-5 w-5 text-amber-400" />
                   <span className="text-sm font-black text-slate-200">{selectedLiver.liver_name || selectedLiver.username}</span>
@@ -527,7 +552,6 @@ export default function Dashboard() {
 
                         <div className="flex flex-col items-end ml-4 flex-shrink-0">
                           <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                          {/* ★ 修正5: 不変の初見日を管理画面にも表示！ */}
                           <span className="text-[10px] text-slate-500 font-medium flex items-center mt-1">
                             <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}
                           </span>
