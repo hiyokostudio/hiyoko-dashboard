@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download } from 'lucide-react';
+import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, BarChart2, ArrowUpDown, MousePointer2, Download } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 type LiverStat = { system_id: string; username: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; };
@@ -229,7 +229,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* マトリックス (ライバー一覧) */}
+        {/* マトリックス */}
         <div className="bg-slate-900/80 rounded-3xl shadow-lg border border-slate-800 overflow-hidden backdrop-blur-md">
           <div className="p-5 border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/50">
             <h3 className="text-sm font-black text-slate-200">ライバー分析マトリックス {healthFilter !== 'all' && <span className="text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded ml-2">フィルター適用中</span>}</h3>
@@ -292,7 +292,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 選択前の案内UI */}
         {!selectedLiverId && (
           <div className="bg-slate-900/40 border border-slate-800/50 border-dashed rounded-3xl p-16 flex flex-col items-center justify-center text-slate-500">
              <MousePointer2 size={48} className="opacity-20 mb-4 animate-bounce" />
@@ -301,7 +300,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* CRM ＆ 最新ログ */}
+        {/* 究極の直感UX - VIP CRM ＆ 最新ログ */}
         {selectedLiverId && selectedLiver && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
             
@@ -319,35 +318,54 @@ export default function Dashboard() {
                     const contributionRate = selectedLiverTotalCoins > 0 ? (vip.total_coins / selectedLiverTotalCoins) * 100 : 0;
                     
                     return (
-                      <div key={vip.viewer_id} className={`flex items-center p-3 rounded-xl border transition-colors ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-800/80'}`}>
+                      <div 
+                        key={vip.viewer_id} 
+                        onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})}
+                        className={`flex items-center p-3 rounded-xl border transition-colors cursor-pointer group ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20' : 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-800/80'}`}
+                      >
                         <div className="w-8 text-center flex-shrink-0">
-                          {vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}
+                          {vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto group-hover:scale-110 transition-transform" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}
                         </div>
-                        <div className="ml-2 flex-shrink-0">
+                        
+                        {/* アバター: クリックでTikTok遷移 */}
+                        <div 
+                           className={`ml-2 flex-shrink-0 ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
+                           onClick={(e) => {
+                             if (vip.unique_id) {
+                               e.stopPropagation();
+                               window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                             }
+                           }}
+                        >
                           {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
                         </div>
+
                         <div className="flex-grow ml-4 min-w-0">
                           <div className="flex items-center gap-3">
-                            <span onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})} className={`font-bold text-sm truncate cursor-pointer hover:underline ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}>
+                            {/* 名前: クリックでTikTok遷移 */}
+                            <span 
+                              className={`font-bold text-sm truncate ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
+                              onClick={(e) => {
+                                if (vip.unique_id) {
+                                  e.stopPropagation();
+                                  window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
+                                }
+                              }}
+                            >
                               {vip.viewer_name}
                             </span>
-                            <div className="flex items-center gap-1">
-                              {vip.unique_id && (
-                                <a href={`https://www.tiktok.com/@${vip.unique_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded text-[10px] font-bold transition-colors">
-                                  <ExternalLink size={10} /> TikTokを開く
-                                </a>
-                              )}
-                              <button onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})} className="flex items-center gap-1 bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold transition-colors border border-indigo-500/30">
-                                <BarChart2 size={10}/> リスナーを分析
-                              </button>
-                            </div>
                             {vip.total_coins >= 1000 && <span className="text-[10px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded flex items-center"><Flame size={10} className="mr-0.5"/> コアファン</span>}
                           </div>
+                          
+                          {/* ゲージ: 行全体クリックの恩恵でアナリティクス展開 */}
                           <div className="flex items-center gap-3 mt-1.5">
-                            <div className="flex-grow h-1 bg-slate-800 rounded-full overflow-hidden"><div className={`h-full rounded-full ${vip.rank === 1 ? 'bg-amber-400' : vip.total_coins >= 1000 ? 'bg-orange-400' : 'bg-indigo-500'}`} style={{ width: `${contributionRate}%` }}></div></div>
+                            <div className="flex-grow h-1 bg-slate-800 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full transition-all duration-500 ${vip.rank === 1 ? 'bg-amber-400' : vip.total_coins >= 1000 ? 'bg-orange-400' : 'bg-indigo-500'}`} style={{ width: `${contributionRate}%` }}></div>
+                            </div>
                             <span className="text-[10px] font-mono text-slate-500 w-8 text-right">{contributionRate.toFixed(1)}%</span>
                           </div>
                         </div>
+
                         <div className="flex flex-col items-end ml-4 flex-shrink-0">
                           <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
                           <span className="text-[10px] text-slate-500">ダイヤ</span>
@@ -366,11 +384,26 @@ export default function Dashboard() {
                 {detailLogs.map((log) => (
                   <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-800/80 transition-colors border border-slate-800/50">
                     <div className="flex items-center gap-3 overflow-hidden">
-                      {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 flex-shrink-0" alt=""/> : <AvatarFallback name={log.viewers?.name || '?'} />}
+                      {/* アバター: クリックでTikTok遷移 */}
+                      <div 
+                         className={`flex-shrink-0 ${log.viewers?.unique_id ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
+                         onClick={(e) => {
+                           if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank');
+                         }}
+                      >
+                        {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover" alt=""/> : <AvatarFallback name={log.viewers?.name || '?'} />}
+                      </div>
                       <div className="flex flex-col overflow-hidden">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-200 text-sm truncate">{log.viewers?.name || '不明'}</span>
-                          {log.viewers?.unique_id && <a href={`https://www.tiktok.com/@${log.viewers.unique_id}`} target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-indigo-400"><ExternalLink size={12}/></a>}
+                          {/* 名前: クリックでTikTok遷移 */}
+                          <span 
+                            className={`font-bold text-slate-200 text-sm truncate ${log.viewers?.unique_id ? 'cursor-pointer hover:underline decoration-slate-500 underline-offset-2' : ''}`}
+                            onClick={(e) => {
+                              if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank');
+                            }}
+                          >
+                            {log.viewers?.name || '不明'}
+                          </span>
                         </div>
                         <span className="text-[10px] font-medium text-slate-500 mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
                       </div>
