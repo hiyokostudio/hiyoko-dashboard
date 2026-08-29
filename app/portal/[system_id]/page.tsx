@@ -2,11 +2,13 @@
 
 import { useEffect, useState, use } from 'react';
 import { supabase } from '@/utils/supabase';
-import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, Activity, ShieldCheck, AlertTriangle, Clock } from 'lucide-react';
+import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, BarChart2, Activity, X, ShieldCheck, AlertTriangle, Clock } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
+import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type GiftLog = { id: number; created_at: string; coins: number; viewers: { name: string; unique_id?: string; avatar_url?: string } | null; };
 type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; first_seen?: string; };
+type ListenerProfile = { first_seen: string; last_seen: string; total_coins: number; day_of_week: Record<string, number>; hour_of_day: Record<string, number>; };
 type LiverStat = { system_id: string; username: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; };
 
 export default function LiverPortal({ params }: { params: Promise<{ system_id: string }> }) {
@@ -22,7 +24,10 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const [activePeriod, setActivePeriod] = useState<'today' | 'month' | 'total' | 'custom'>('today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [activeView, setActiveView] = useState<'vips' | 'logs'>('vips'); // ★ デフォルトをVIP(育成)ビューに変更
+  const [activeView, setActiveView] = useState<'vips' | 'logs'>('vips'); // VIP（戦略）をデフォルトに変更
+
+  const [selectedViewer, setSelectedViewer] = useState<{id: string, name: string, unique_id: string | null} | null>(null);
+  const [viewerProfile, setViewerProfile] = useState<ListenerProfile | null>(null);
 
   const getTimeBounds = () => {
     let startIso = null; let endIso = null; const now = new Date();
@@ -45,11 +50,23 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         const endTime = endIso ? new Date(endIso).getTime() : Infinity;
         
         if (logTime >= startTime && logTime <= endTime) {
-          fetchData(); // データの整合性を保つため再フェッチ
+          const { data: viewerData } = await supabase.from('viewers').select('name, unique_id, avatar_url').eq('id', payload.new.viewer_id).single();
+          const newLog: GiftLog = { id: payload.new.id, created_at: payload.new.created_at, coins: payload.new.coins, viewers: { name: viewerData?.name || '不明', unique_id: viewerData?.unique_id, avatar_url: viewerData?.avatar_url } };
+          setRecentLogs(prev => [newLog, ...prev].slice(0, 50));
+          fetchData(); // リアルタイムで全体の数字を更新
         }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [system_id, activePeriod, startDate, endDate]);
+
+  useEffect(() => {
+    if (selectedViewer) fetchViewerProfile(system_id, selectedViewer.id);
+  }, [selectedViewer]);
+
+  const fetchViewerProfile = async (liverId: string, viewerId: string) => {
+    const { data } = await supabase.rpc('get_listener_profile', { p_liver_id: liverId, p_viewer_id: viewerId });
+    if (data) setViewerProfile(data as ListenerProfile);
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -60,13 +77,10 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     }
 
     const { startIso, endIso } = getTimeBounds();
-    let query = supabase.from('gift_logs').select('id, created_at, coins, viewers(name, unique_id, avatar_url)').eq('liver_id', system_id).order('created_at', { ascending: false }).limit(50);
-    if (startIso) query = query.gte('created_at', startIso); 
-    if (endIso) query = query.lte('created_at', endIso); 
-
-    const { data: logsRes } = await query;
-    if (logsRes) setRecentLogs(logsRes as unknown as GiftLog[]);
     
+    const { data: logs } = await supabase.from('gift_logs').select('id, created_at, coins, viewers(name, unique_id, avatar_url)').eq('liver_id', system_id).gte('created_at', startIso || '2000-01-01').lte('created_at', endIso || '3000-01-01').order('created_at', { ascending: false }).limit(50);
+    if (logs) setRecentLogs(logs as unknown as GiftLog[]);
+
     const { data: vips } = await supabase.rpc('get_liver_vips', { p_system_id: system_id, p_start_date: startIso, p_end_date: endIso });
     if (vips) setVipListeners(vips as VipListener[]);
 
@@ -87,6 +101,10 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const unitPriceUSD = (1000 * (liverInfo.reward_rate / 10000)).toFixed(2);
   
   const isDanger = (liverStat?.dependency_rate || 0) >= 80 && totalCoins > 0;
+
+  const daysMap = { 'Monday': '月', 'Tuesday': '火', 'Wednesday': '水', 'Thursday': '木', 'Friday': '金', 'Saturday': '土', 'Sunday': '日' };
+  const dowData = viewerProfile ? Object.keys(daysMap).map(d => ({ name: daysMap[d as keyof typeof daysMap], coins: viewerProfile.day_of_week?.[d] || 0 })) : [];
+  const hodData = viewerProfile ? Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 })) : [];
 
   const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => (
     <div className={`${size} rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-bold ${textSize} uppercase flex-shrink-0`}>{name.charAt(0)}</div>
@@ -111,9 +129,13 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           </div>
           {activePeriod === 'custom' && (
             <div className="mt-2 flex items-center space-x-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800/80 backdrop-blur-sm animate-in fade-in">
-              <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors"><input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-transparent text-[10px] px-2 py-2 outline-none font-bold text-slate-300 [color-scheme:dark]" /></div>
+              <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors">
+                <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-transparent text-[10px] px-2 py-2 outline-none font-bold text-slate-300 [color-scheme:dark]" />
+              </div>
               <span className="text-slate-500 text-xs">〜</span>
-              <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors"><input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-transparent text-[10px] px-2 py-2 outline-none font-bold text-slate-300 [color-scheme:dark]" /></div>
+              <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors">
+                <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-transparent text-[10px] px-2 py-2 outline-none font-bold text-slate-300 [color-scheme:dark]" />
+              </div>
             </div>
           )}
         </div>
@@ -203,9 +225,13 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                         <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? `${format(parseISO(vip.first_seen), 'yyyy/MM/dd')} からのリスナー` : '初見日データなし'}
                       </div>
                     </div>
+                    
+                    {/* カルテを開くボタン */}
                     <div className="flex flex-col items-end ml-3 flex-shrink-0">
                       <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                      <span className="text-[9px] text-slate-500">ダイヤ</span>
+                      <button onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name, unique_id: vip.unique_id})} className="mt-1 flex items-center gap-1 bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold transition-colors border border-indigo-500/30">
+                        <BarChart2 size={10}/> 分析
+                      </button>
                     </div>
                   </div>
 
@@ -226,9 +252,9 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             })}
             {activeView === 'vips' && vipListeners.length === 0 && <div className="text-center py-10 text-slate-600 text-xs font-bold uppercase tracking-widest flex flex-col items-center justify-center"><Users className="mb-2 opacity-20" size={24}/> No Listeners</div>}
 
-            {/* ログビュー（TikTokリンク対応） */}
+            {/* ログビュー */}
             {activeView === 'logs' && recentLogs.map((log, i) => (
-              <div key={log.id} className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 ${i === 0 ? 'bg-indigo-600/10 border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)]' : 'bg-slate-900/40 border-slate-800/50'}`}>
+              <div key={log.id} className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 ${i === 0 ? 'bg-indigo-600/10 border-indigo-500/30' : 'bg-slate-900/40 border-slate-800/50'}`}>
                 <div className="flex items-center gap-3 overflow-hidden">
                   <div className="flex-shrink-0 relative z-10">
                     {log.viewers?.unique_id ? (
@@ -259,6 +285,38 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           </div>
         </div>
 
+        {/* スマホ用 リスナープロファイリング・モーダル */}
+        {selectedViewer && viewerProfile && (
+          <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedViewer(null)}>
+            <div className="bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md shadow-2xl relative pb-10 sm:pb-6 animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0" onClick={e => e.stopPropagation()}>
+              <div className="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-6 sm:hidden"></div>
+              <button onClick={() => setSelectedViewer(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 p-1.5 rounded-full"><X size={16}/></button>
+              
+              <div className="mb-6">
+                <h2 className="text-xl font-black text-white truncate pr-10">{selectedViewer.name}</h2>
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full">リスナー分析</span>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-3 mb-5">
+                <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800/80"><p className="text-[9px] text-slate-500 font-bold mb-1">初回来訪</p><p className="text-xs font-bold text-slate-200">{format(parseISO(viewerProfile.first_seen), 'yyyy/MM/dd')}</p></div>
+                <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800/80"><p className="text-[9px] text-slate-500 font-bold mb-1">総支援額</p><p className="text-sm font-black text-amber-400">{viewerProfile.total_coins.toLocaleString()} <span className="text-[9px] text-slate-500 font-normal">ダイヤ</span></p></div>
+              </div>
+
+              <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-800/80 h-[180px] flex flex-col mb-4">
+                <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">曜日別 投下トレンド</h4>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={Object.keys({'Monday':'月', 'Tuesday':'火', 'Wednesday':'水', 'Thursday':'木', 'Friday':'金', 'Saturday':'土', 'Sunday':'日'}).map(d => ({ name: {'Monday':'月', 'Tuesday':'火', 'Wednesday':'水', 'Thursday':'木', 'Friday':'金', 'Saturday':'土', 'Sunday':'日'}[d], coins: viewerProfile.day_of_week?.[d] || 0 }))}>
+                    <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
+                    <Tooltip cursor={{fill: '#1e293b'}} contentStyle={{ backgroundColor: '#020617', borderColor: '#334155', borderRadius: '8px', fontSize: '10px' }} itemStyle={{ color: '#818cf8', fontWeight: 'bold' }} />
+                    <Bar dataKey="coins" fill="#818cf8" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
