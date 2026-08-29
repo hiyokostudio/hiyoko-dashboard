@@ -40,8 +40,15 @@ function connectToLive(systemId, username) {
   const connection = new WebcastPushConnection(username);
   activeConnections.set(systemId, connection);
 
-  connection.connect().then(state => {
+  connection.connect().then(async state => {
     console.log(`✅ [${username}] 接続成功! RoomID: ${state.roomId}`);
+    try {
+      const avatarUrl = state.roomInfo?.owner?.avatar_thumb?.url_list?.[0];
+      if (avatarUrl) {
+        await supabase.from('target_livers').update({ avatar_url: avatarUrl }).eq('system_id', systemId);
+      }
+    } catch (e) { 
+    }
   }).catch(err => {
     console.error(`❌ [${username}] 接続エラー:`, err.message);
     activeConnections.delete(systemId);

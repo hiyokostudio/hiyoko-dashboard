@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2 } from 'lucide-react';
+import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 type LiverStat = { system_id: string; username: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; };
@@ -31,6 +31,7 @@ export default function Dashboard() {
 
   const [selectedViewer, setSelectedViewer] = useState<{id: string, name: string} | null>(null);
   const [viewerProfile, setViewerProfile] = useState<ListenerProfile | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     if (activeTab !== 'custom') fetchIntelligenceData();
@@ -103,6 +104,38 @@ export default function Dashboard() {
   };
   const toggleStatus = async (systemId: string, current: boolean) => { await supabase.from('target_livers').update({ is_active: !current }).eq('system_id', systemId); fetchIntelligenceData(); };
 
+  const handleExportCSV = async () => {
+    setIsExporting(true);
+    const { startIso, endIso } = getTimeBounds();
+    
+    let query = supabase.from('gift_logs').select(`created_at, coins, liver_id, target_livers(username), viewers(name, unique_id)`).order('created_at', { ascending: false });
+    if (startIso) query = query.gte('created_at', startIso);
+    if (endIso) query = query.lte('created_at', endIso);
+    
+    const { data, error } = await query;
+    if (error || !data) { alert('データのエクスポートに失敗しました'); setIsExporting(false); return; }
+
+    const headers = ['日付', '時間', 'ライバー', 'リスナー', 'TikTok ID', '獲得ダイヤ'];
+    const rows = data.map((log: any) => {
+      const d = new Date(log.created_at);
+      return [
+        format(d, 'yyyy/MM/dd'), format(d, 'HH:mm:ss'),
+        `"${log.target_livers?.username || log.liver_id}"`,
+        `"${log.viewers?.name || '不明'}"`,
+        log.viewers?.unique_id || '',
+        log.coins
+      ].join(',');
+    });
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url; link.download = `hiyoko_logs_${format(new Date(), 'yyyyMMdd_HHmm')}.csv`;
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    setIsExporting(false);
+  };
+
   const handleSort = (key: keyof LiverStat) => {
     setSortConfig(prev => ({ key, direction: prev.key === key && prev.direction === 'desc' ? 'asc' : 'desc' }));
   };
@@ -120,7 +153,6 @@ export default function Dashboard() {
     if (healthFilter === 'safe') result = result.filter(s => s.total_coins > 0 && s.dependency_rate < 50);
     
     result.sort((a, b) => {
-      // TypeScriptエラー解消：undefinedの場合は空文字や0として扱う
       const aValue = a[sortConfig.key] ?? 0;
       const bValue = b[sortConfig.key] ?? 0;
       if (aValue < bValue) return sortConfig.direction === 'asc' ? -1 : 1;
@@ -138,9 +170,7 @@ export default function Dashboard() {
   const hodData = viewerProfile ? Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 })) : [];
 
   const AvatarFallback = ({ name }: { name: string }) => (
-    <div className="w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 font-bold text-xs uppercase flex-shrink-0">
-      {name.charAt(0)}
-    </div>
+    <div className="w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 font-bold text-xs uppercase flex-shrink-0">{name.charAt(0)}</div>
   );
 
   if (loading && stats.length === 0) return <div className="min-h-screen bg-slate-950 flex items-center justify-center font-bold text-slate-500">システム初期化中...</div>;
@@ -149,7 +179,6 @@ export default function Dashboard() {
     <div className="min-h-screen bg-[#020617] text-slate-50 p-4 md:p-8 font-sans selection:bg-indigo-500/30 overflow-x-hidden">
       <div className="max-w-7xl mx-auto space-y-8">
         
-        {/* ヘッダーエリア */}
         <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 border-b border-slate-800/80 pb-6">
           <div><h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Hiyoko Intelligence</h1><p className="text-slate-400 mt-1 text-sm font-medium">TikTok Live 戦略マネジメントシステム</p></div>
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
@@ -174,7 +203,6 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* サマリー ＆ 健全度フィルター */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 bg-slate-900/60 border border-slate-800/80 p-6 rounded-3xl shadow-lg relative overflow-hidden backdrop-blur-sm">
             <div className="absolute top-0 right-0 p-6 opacity-10"><Coins size={100} /></div>
@@ -205,19 +233,24 @@ export default function Dashboard() {
         <div className="bg-slate-900/80 rounded-3xl shadow-lg border border-slate-800 overflow-hidden backdrop-blur-md">
           <div className="p-5 border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/50">
             <h3 className="text-sm font-black text-slate-200">ライバー分析マトリックス {healthFilter !== 'all' && <span className="text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded ml-2">フィルター適用中</span>}</h3>
-            {isAdding ? (
-              <div className="flex items-center space-x-2 bg-slate-800/50 p-1.5 rounded-xl border border-slate-700 animate-in fade-in">
-                <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="ユーザー名 (@不要)" className="text-xs px-3 py-2 outline-none w-32 bg-slate-950 border border-slate-700 rounded-lg text-white" />
-                <input type="text" value={newSystemId} onChange={e => setNewSystemId(e.target.value)} placeholder="システムID (数字)" className="text-xs px-3 py-2 outline-none w-40 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono" />
-                <button onClick={handleAddTarget} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">追加</button>
-                <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-slate-200 p-2"><X size={16}/></button>
-              </div>
-            ) : (<button onClick={() => setIsAdding(true)} className="flex items-center text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl border border-slate-700"><UserPlus size={14} className="mr-2" /> ライバーを登録</button>)}
+            <div className="flex items-center gap-2">
+              <button onClick={handleExportCSV} disabled={isExporting} className="flex items-center text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl border border-slate-700 transition-colors disabled:opacity-50">
+                <Download size={14} className="mr-2" /> {isExporting ? '生成中...' : 'CSV出力'}
+              </button>
+              {isAdding ? (
+                <div className="flex items-center space-x-2 bg-slate-800/50 p-1.5 rounded-xl border border-slate-700 animate-in fade-in">
+                  <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="ユーザー名 (@不要)" className="text-xs px-3 py-2 outline-none w-32 bg-slate-950 border border-slate-700 rounded-lg text-white" />
+                  <input type="text" value={newSystemId} onChange={e => setNewSystemId(e.target.value)} placeholder="システムID (数字)" className="text-xs px-3 py-2 outline-none w-40 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono" />
+                  <button onClick={handleAddTarget} className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">追加</button>
+                  <button onClick={() => setIsAdding(false)} className="text-slate-400 hover:text-slate-200 p-2"><X size={16}/></button>
+                </div>
+              ) : (<button onClick={() => setIsAdding(true)} className="flex items-center text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl border border-slate-700"><UserPlus size={14} className="mr-2" /> ライバーを登録</button>)}
+            </div>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[900px] select-none">
-              <thead>
-                <tr className="bg-slate-950/50 text-[10px] font-black text-slate-500 border-b border-slate-800/80">
+          <div className="overflow-x-auto max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
+            <table className="w-full text-left border-collapse min-w-[900px] select-none relative">
+              <thead className="sticky top-0 z-10 bg-slate-950 shadow-md">
+                <tr className="text-[10px] font-black text-slate-500 border-b border-slate-800/80">
                   <th className="p-4 pl-6 cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('username')}>ライバー <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 text-right cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('total_coins')}>獲得ダイヤ <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('unique_listeners')}>ユニークリスナー <ArrowUpDown size={10} className="inline ml-1" /></th>
