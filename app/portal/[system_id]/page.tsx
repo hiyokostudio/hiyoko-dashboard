@@ -47,7 +47,8 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   };
 
   useEffect(() => {
-    const urlParams = newSearchParams(window.location.search);
+    // ★ タイポを修正：new URLSearchParams が正解
+    const urlParams = new URLSearchParams(window.location.search);
     const godmode = urlParams.get('godmode');
     if (godmode === adminMasterKey) {
       setIsUnlocked(true);
@@ -67,7 +68,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   useEffect(() => {
     const channel = supabase.channel(`portal:${system_id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs', filter: `liver_id=eq.${system_id}` }, async () => {
-        // ★バグ修正：配信中に手動計算せず、シンプルに画面全体を再取得させることで確実に同期する
         fetchData(); 
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -152,8 +152,10 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         <div className="z-10 flex flex-col items-center w-full max-w-sm px-8">
           {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-20 h-20 rounded-full border border-slate-700 object-cover mb-4 shadow-xl" alt=""/> : <AvatarFallback name={liverInfo.liver_name || liverInfo.username} size="w-20 h-20" textSize="text-2xl" />}
           
-          <h1 className="text-xl font-black text-white mb-1">{liverInfo.liver_name || liverInfo.username}</h1>
-          <p className="text-[11px] font-mono font-semibold text-indigo-400/80 mb-8 tracking-wider">@{liverInfo.username}</p>
+          <div className="flex flex-col items-center justify-center">
+            <h1 className="text-xl font-black text-white mb-1">{liverInfo.liver_name || liverInfo.username}</h1>
+            <p className="text-[11px] font-mono font-semibold text-indigo-400/80 mb-8 tracking-wider">@{liverInfo.username}</p>
+          </div>
           
           <div className={`flex gap-5 mb-12 ${pinError ? 'animate-[shake_0.4s_ease-in-out]' : ''}`}>
             {[0, 1, 2, 3].map(i => (
