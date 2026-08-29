@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, BarChart2, ArrowUpDown, MousePointer2, Download } from 'lucide-react';
+import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 type LiverStat = { system_id: string; username: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; };
@@ -87,7 +87,7 @@ export default function Dashboard() {
 
   const fetchVips = async (systemId: string) => {
     const { startIso, endIso } = getTimeBounds();
-    const { data } = await supabase.rpc('get_liver_vips', { p_system_id: systemId, p_start_date: startIso, p_end_date: endIso });
+    const { data } = await supabase.rpc('get_liver_vips', { p_system_id: system_id, p_start_date: startIso, p_end_date: endIso });
     if (data) setVipListeners(data as VipListener[]);
   };
 
@@ -170,7 +170,7 @@ export default function Dashboard() {
   const hodData = viewerProfile ? Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 })) : [];
 
   const AvatarFallback = ({ name }: { name: string }) => (
-    <div className="w-8 h-8 rounded-full bg-indigo-500/20 border border-indigo-500/30 flex items-center justify-center text-indigo-300 font-bold text-xs uppercase flex-shrink-0">{name.charAt(0)}</div>
+    <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-bold text-sm uppercase flex-shrink-0">{name.charAt(0)}</div>
   );
 
   if (loading && stats.length === 0) return <div className="min-h-screen bg-slate-950 flex items-center justify-center font-bold text-slate-500">システム初期化中...</div>;
@@ -229,7 +229,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* マトリックス */}
+        {/* マトリックス (ライバー一覧) */}
         <div className="bg-slate-900/80 rounded-3xl shadow-lg border border-slate-800 overflow-hidden backdrop-blur-md">
           <div className="p-5 border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/50">
             <h3 className="text-sm font-black text-slate-200">ライバー分析マトリックス {healthFilter !== 'all' && <span className="text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded ml-2">フィルター適用中</span>}</h3>
@@ -268,7 +268,7 @@ export default function Dashboard() {
                   return (
                     <tr key={liver.system_id} onClick={() => setSelectedLiverId(liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
                       <td className="p-4 pl-6 flex items-center gap-3">
-                        {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-8 h-8 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.username} />}
+                        {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-8 h-8 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-xs">{liver.username.charAt(0)}</div>}
                         <div><div className={`font-bold ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>{liver.username}</div><div className="text-[10px] text-slate-600 font-mono mt-0.5">{liver.system_id.slice(0, 10)}...</div></div>
                       </td>
                       <td className="p-4 text-right font-black text-slate-200">{liver.total_coins.toLocaleString()} <span className="text-[10px] text-slate-600 font-normal">ダイヤ</span></td>
@@ -327,59 +327,40 @@ export default function Dashboard() {
                           {vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto group-hover:scale-110 transition-transform" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}
                         </div>
                         
-                        {/* アバター: クリックでTikTok遷移 */}
-                        <div 
-                           className={`ml-2 flex-shrink-0 relative ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
-                           onClick={(e) => {
-                             e.preventDefault(); // デフォルトの動作をキャンセル
-                             e.stopPropagation(); // 親の onClick（プロファイリング展開）を完全ブロック
-                             if (vip.unique_id) {
-                               window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
-                             } else {
-                               alert('TikTok IDがまだ取得されていません（次回ギフト受信時に取得されます）');
-                             }
-                           }}
-                        >
-                          {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
+                        {/* アバター & 名前: HTMLの純粋な<a>タグで完全な別タブ遷移 */}
+                        <div className="ml-2 flex-grow min-w-0 flex items-center gap-3 relative z-10">
+                          {vip.unique_id ? (
+                            <a href={`https://www.tiktok.com/@${vip.unique_id}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-3 hover:opacity-80 group/link">
+                              {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
+                              <span className="font-bold text-sm truncate group-hover/link:underline decoration-slate-400 underline-offset-4 text-slate-200">
+                                {vip.viewer_name} <ExternalLink size={12} className="inline text-slate-500 ml-1 mb-0.5" />
+                              </span>
+                            </a>
+                          ) : (
+                            <div className="flex items-center gap-3">
+                              {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
+                              <span className="font-bold text-sm truncate text-slate-300">{vip.viewer_name}</span>
+                            </div>
+                          )}
+                          {vip.total_coins >= 1000 && <span className="text-[10px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded flex items-center"><Flame size={10} className="mr-0.5"/> コアファン</span>}
                         </div>
-
-                        <div className="flex-grow ml-4 min-w-0">
-                          <div className="flex items-center gap-3">
-                            {/* 名前: クリックでTikTok遷移 */}
-                            <span 
-                              className={`font-bold text-sm truncate ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}
-                              onClick={(e) => {
-                                e.preventDefault(); // デフォルトの動作をキャンセル
-                                e.stopPropagation(); // 親の onClick（プロファイリング展開）を完全ブロック
-                                if (vip.unique_id) {
-                                  window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank');
-                                } else {
-                                  alert('TikTok IDがまだ取得されていません（次回ギフト受信時に取得されます）');
-                                }
-                              }}
-                            >
-                              {vip.viewer_name}
-                            </span>
-                            {vip.total_coins >= 1000 && <span className="text-[10px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1.5 py-0.5 rounded flex items-center"><Flame size={10} className="mr-0.5"/> コアファン</span>}
-                          </div>
-                          
-                          {/* ゲージ */}
-                          <div className="flex items-center gap-3 mt-1.5">
+                        
+                        {/* ゲージとダイヤ数 */}
+                        <div className="flex items-center gap-4 flex-shrink-0 w-1/3 min-w-[120px]">
+                          <div className="flex-grow flex items-center gap-3 mt-1.5">
                             <div className="flex-grow h-1 bg-slate-800 rounded-full overflow-hidden">
                               <div className={`h-full rounded-full transition-all duration-500 ${vip.rank === 1 ? 'bg-amber-400' : vip.total_coins >= 1000 ? 'bg-orange-400' : 'bg-indigo-500'}`} style={{ width: `${contributionRate}%` }}></div>
                             </div>
-                            <span className="text-[10px] font-mono text-slate-500 w-8 text-right">{contributionRate.toFixed(1)}%</span>
+                            <span className="text-[10px] font-mono text-slate-500 w-8 text-right hidden sm:block">{contributionRate.toFixed(1)}%</span>
                           </div>
-                        </div>
-
-                        <div className="flex flex-col items-end ml-4 flex-shrink-0">
-                          <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                          <span className="text-[10px] text-slate-500">ダイヤ</span>
+                          <div className="flex flex-col items-end flex-shrink-0">
+                            <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
+                            <span className="text-[10px] text-slate-500">ダイヤ</span>
+                          </div>
                         </div>
                       </div>
                     );
                   })}
-                  {vipListeners.length === 0 && <div className="flex flex-col items-center justify-center text-slate-600 h-40 space-y-3"><Users className="opacity-20" size={40} /><p className="text-xs font-bold">リスナーが見つかりません</p></div>}
                 </div>
               </div>
             </div>
@@ -390,29 +371,23 @@ export default function Dashboard() {
                 {detailLogs.map((log) => (
                   <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-800/80 transition-colors border border-slate-800/50">
                     <div className="flex items-center gap-3 overflow-hidden">
-                      {/* アバター: クリックでTikTok遷移 */}
-                      <div 
-                         className={`flex-shrink-0 ${log.viewers?.unique_id ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}
-                         onClick={(e) => {
-                           if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank');
-                         }}
-                      >
-                        {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover" alt=""/> : <AvatarFallback name={log.viewers?.name || '?'} />}
-                      </div>
-                      <div className="flex flex-col overflow-hidden">
-                        <div className="flex items-center gap-2">
-                          {/* 名前: クリックでTikTok遷移 */}
-                          <span 
-                            className={`font-bold text-slate-200 text-sm truncate ${log.viewers?.unique_id ? 'cursor-pointer hover:underline decoration-slate-500 underline-offset-2' : ''}`}
-                            onClick={(e) => {
-                              if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank');
-                            }}
-                          >
-                            {log.viewers?.name || '不明'}
-                          </span>
+                      {log.viewers?.unique_id ? (
+                        <a href={`https://www.tiktok.com/@${log.viewers.unique_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-80 group/link">
+                          {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover flex-shrink-0" alt=""/> : <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-xs">{log.viewers?.name.charAt(0)}</div>}
+                          <div className="flex flex-col overflow-hidden">
+                            <span className="font-bold text-slate-200 text-sm truncate group-hover/link:underline decoration-slate-400 underline-offset-4">{log.viewers?.name || '不明'}</span>
+                            <span className="text-[10px] font-medium text-slate-500 mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
+                          </div>
+                        </a>
+                      ) : (
+                        <div className="flex items-center gap-3">
+                          {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover flex-shrink-0" alt=""/> : <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-xs">{log.viewers?.name.charAt(0)}</div>}
+                          <div className="flex flex-col overflow-hidden">
+                            <span className="font-bold text-slate-300 text-sm truncate">{log.viewers?.name || '不明'}</span>
+                            <span className="text-[10px] font-medium text-slate-500 mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
+                          </div>
                         </div>
-                        <span className="text-[10px] font-medium text-slate-500 mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
-                      </div>
+                      )}
                     </div>
                     <div className="flex items-center bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20 whitespace-nowrap ml-2"><span className="font-black text-emerald-400 text-xs">+{log.coins}</span></div>
                   </div>

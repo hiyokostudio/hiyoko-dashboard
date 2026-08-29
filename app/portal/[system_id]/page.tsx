@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from 'react';
 import { supabase } from '@/utils/supabase';
-import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, BarChart2, Activity, X, ShieldCheck, AlertTriangle, Clock } from 'lucide-react';
+import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, Activity, ShieldCheck, AlertTriangle, Clock, X } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -24,9 +24,9 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const [activePeriod, setActivePeriod] = useState<'today' | 'month' | 'total' | 'custom'>('today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
-  const [activeView, setActiveView] = useState<'vips' | 'logs'>('vips'); // VIP（戦略）をデフォルトに変更
+  const [activeView, setActiveView] = useState<'vips' | 'logs'>('vips'); 
 
-  const [selectedViewer, setSelectedViewer] = useState<{id: string, name: string, unique_id: string | null} | null>(null);
+  const [selectedViewer, setSelectedViewer] = useState<{id: string, name: string} | null>(null);
   const [viewerProfile, setViewerProfile] = useState<ListenerProfile | null>(null);
 
   const getTimeBounds = () => {
@@ -50,10 +50,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         const endTime = endIso ? new Date(endIso).getTime() : Infinity;
         
         if (logTime >= startTime && logTime <= endTime) {
-          const { data: viewerData } = await supabase.from('viewers').select('name, unique_id, avatar_url').eq('id', payload.new.viewer_id).single();
-          const newLog: GiftLog = { id: payload.new.id, created_at: payload.new.created_at, coins: payload.new.coins, viewers: { name: viewerData?.name || '不明', unique_id: viewerData?.unique_id, avatar_url: viewerData?.avatar_url } };
-          setRecentLogs(prev => [newLog, ...prev].slice(0, 50));
-          fetchData(); // リアルタイムで全体の数字を更新
+          fetchData(); // データの整合性を保つため再フェッチ
         }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
@@ -77,10 +74,13 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     }
 
     const { startIso, endIso } = getTimeBounds();
-    
-    const { data: logs } = await supabase.from('gift_logs').select('id, created_at, coins, viewers(name, unique_id, avatar_url)').eq('liver_id', system_id).gte('created_at', startIso || '2000-01-01').lte('created_at', endIso || '3000-01-01').order('created_at', { ascending: false }).limit(50);
-    if (logs) setRecentLogs(logs as unknown as GiftLog[]);
+    let query = supabase.from('gift_logs').select('id, created_at, coins, viewers(name, unique_id, avatar_url)').eq('liver_id', system_id).order('created_at', { ascending: false }).limit(50);
+    if (startIso) query = query.gte('created_at', startIso); 
+    if (endIso) query = query.lte('created_at', endIso); 
 
+    const { data: logsRes } = await query;
+    if (logsRes) setRecentLogs(logsRes as unknown as GiftLog[]);
+    
     const { data: vips } = await supabase.rpc('get_liver_vips', { p_system_id: system_id, p_start_date: startIso, p_end_date: endIso });
     if (vips) setVipListeners(vips as VipListener[]);
 
@@ -99,7 +99,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const currentRewardUSD = totalCoins * (liverInfo.reward_rate / 10000);
   const currentRewardJPY = Math.floor(currentRewardUSD * exchangeRate);
   const unitPriceUSD = (1000 * (liverInfo.reward_rate / 10000)).toFixed(2);
-  
   const isDanger = (liverStat?.dependency_rate || 0) >= 80 && totalCoins > 0;
 
   const daysMap = { 'Monday': '月', 'Tuesday': '火', 'Wednesday': '水', 'Thursday': '木', 'Friday': '金', 'Saturday': '土', 'Sunday': '日' };
@@ -129,18 +128,13 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           </div>
           {activePeriod === 'custom' && (
             <div className="mt-2 flex items-center space-x-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800/80 backdrop-blur-sm animate-in fade-in">
-              <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors">
-                <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-transparent text-[10px] px-2 py-2 outline-none font-bold text-slate-300 [color-scheme:dark]" />
-              </div>
+              <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors"><input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-transparent text-[10px] px-2 py-2 outline-none font-bold text-slate-300 [color-scheme:dark]" /></div>
               <span className="text-slate-500 text-xs">〜</span>
-              <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors">
-                <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-transparent text-[10px] px-2 py-2 outline-none font-bold text-slate-300 [color-scheme:dark]" />
-              </div>
+              <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors"><input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-transparent text-[10px] px-2 py-2 outline-none font-bold text-slate-300 [color-scheme:dark]" /></div>
             </div>
           )}
         </div>
 
-        {/* 報酬 ＆ 戦略KPI */}
         <div className="px-6 relative z-10 flex flex-col gap-3">
           <div className="bg-gradient-to-br from-slate-900/80 to-black border border-slate-800/80 p-5 rounded-3xl shadow-2xl backdrop-blur-md relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10"><Zap size={100} className="text-indigo-400"/></div>
@@ -153,7 +147,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             </div>
           </div>
 
-          {/* ★ 追加：ライバーに「現状の健全性と課題」を突きつけるパネル */}
           <div className={`p-4 rounded-2xl border backdrop-blur-md flex items-center justify-between ${isDanger ? 'bg-rose-950/40 border-rose-500/30' : 'bg-slate-900/60 border-slate-800/80'}`}>
             <div className="flex gap-4">
               <div><p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">参加者 (1C+)</p><p className="text-base font-black text-slate-200">{liverStat?.unique_listeners || 0} <span className="text-[10px] font-normal text-slate-500">人</span></p></div>
@@ -170,7 +163,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           </div>
         </div>
 
-        {/* リストエリア (VIPとログ) */}
         <div className="mt-5 px-6 relative z-10 flex-grow flex flex-col min-h-0">
           <div className="flex space-x-2 border-b border-slate-800/80 pb-2 mb-3 px-1">
             <button onClick={() => setActiveView('vips')} className={`flex-1 flex justify-center items-center pb-2 border-b-2 transition-all ${activeView === 'vips' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}>
@@ -182,7 +174,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           </div>
           
           <div className="flex-grow overflow-y-auto space-y-2.5 pr-2 pb-6 scrollbar-none">
-            {/* ★ VIPランキング（ライバー用戦略リスト） */}
             {activeView === 'vips' && vipListeners.map((vip) => {
               const contributionRate = totalCoins > 0 ? (vip.total_coins / totalCoins) * 100 : 0;
               const isCore = vip.total_coins >= 1000;
@@ -190,52 +181,44 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
               const progress = Math.min((vip.total_coins / 1000) * 100, 100);
 
               return (
-                <div key={vip.viewer_id} className={`flex flex-col p-3 rounded-2xl border transition-all ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-slate-900/60 border-slate-800/50'}`}>
+                <div key={vip.viewer_id} className={`flex flex-col p-3 rounded-2xl border transition-all cursor-pointer ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-slate-900/60 border-slate-800/50'}`} onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})}>
                   <div className="flex items-center">
                     <div className="w-6 text-center flex-shrink-0">
                       {vip.rank === 1 ? <Crown size={16} className="text-amber-400 mx-auto" /> : vip.rank === 2 ? <Award size={16} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={16} className="text-amber-700 mx-auto" /> : <span className="text-xs font-bold text-slate-500">{vip.rank}</span>}
                     </div>
                     
-                    {/* アバター (クリックでTikTok) */}
-                    <div className="ml-2 flex-shrink-0 relative z-10">
+                    {/* HTMLネイティブなリンク。stopPropagationでモーダル展開を阻止 */}
+                    <div className="ml-2 flex-shrink-0 relative z-10 flex items-center">
                       {vip.unique_id ? (
-                        <a href={`https://www.tiktok.com/@${vip.unique_id}`} target="_blank" rel="noopener noreferrer" className="block hover:opacity-80 transition-opacity">
+                        <a href={`https://www.tiktok.com/@${vip.unique_id}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="flex items-center gap-3 hover:opacity-80 group/link">
                           {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
+                          <div className="flex flex-col">
+                            <span className="font-bold text-[13px] group-hover/link:underline decoration-slate-400 underline-offset-4 text-slate-200">
+                              {vip.viewer_name} <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />
+                            </span>
+                            <span className="text-[10px] text-slate-500 font-medium mt-0.5 flex items-center">
+                              <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}
+                            </span>
+                          </div>
                         </a>
                       ) : (
-                        vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />
+                        <div className="flex items-center gap-3">
+                          {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
+                          <div className="flex flex-col">
+                            <span className="font-bold text-[13px] text-slate-200">{vip.viewer_name}</span>
+                            <span className="text-[10px] text-slate-500 font-medium mt-0.5 flex items-center"><Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}</span>
+                          </div>
+                        </div>
                       )}
+                      {isCore && <span className="text-[9px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1 py-0.5 rounded flex items-center ml-2 h-fit"><Flame size={8} className="mr-0.5"/> Core</span>}
                     </div>
 
-                    <div className="flex-grow ml-3 min-w-0">
-                      <div className="flex items-center gap-2 relative z-10">
-                        {/* 名前 (クリックでTikTok) */}
-                        {vip.unique_id ? (
-                          <a href={`https://www.tiktok.com/@${vip.unique_id}`} target="_blank" rel="noopener noreferrer" className={`font-bold text-[13px] truncate hover:underline decoration-slate-400 underline-offset-4 ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}>
-                            {vip.viewer_name}
-                          </a>
-                        ) : (
-                          <span className={`font-bold text-[13px] truncate ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}>{vip.viewer_name}</span>
-                        )}
-                        {vip.unique_id && <ExternalLink size={10} className="text-slate-600"/>}
-                        {isCore && <span className="text-[9px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1 py-0.5 rounded flex items-center"><Flame size={8} className="mr-0.5"/> Core</span>}
-                      </div>
-                      {/* 初見日（歴史）表示 */}
-                      <div className="text-[10px] text-slate-500 font-medium mt-0.5 flex items-center">
-                        <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? `${format(parseISO(vip.first_seen), 'yyyy/MM/dd')} からのリスナー` : '初見日データなし'}
-                      </div>
-                    </div>
-                    
-                    {/* カルテを開くボタン */}
-                    <div className="flex flex-col items-end ml-3 flex-shrink-0">
+                    <div className="flex flex-col items-end flex-grow ml-3 flex-shrink-0">
                       <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                      <button onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name, unique_id: vip.unique_id})} className="mt-1 flex items-center gap-1 bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-300 px-2 py-0.5 rounded text-[10px] font-bold transition-colors border border-indigo-500/30">
-                        <BarChart2 size={10}/> 分析
-                      </button>
+                      <span className="text-[9px] text-slate-500">ダイヤ</span>
                     </div>
                   </div>
 
-                  {/* コアファン昇格へのプログレスバー（アップセル導線） */}
                   {!isCore && (
                     <div className="mt-3 ml-11 bg-slate-950/50 p-2 rounded-lg border border-slate-800/50">
                       <div className="flex justify-between items-center mb-1">
@@ -252,28 +235,27 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             })}
             {activeView === 'vips' && vipListeners.length === 0 && <div className="text-center py-10 text-slate-600 text-xs font-bold uppercase tracking-widest flex flex-col items-center justify-center"><Users className="mb-2 opacity-20" size={24}/> No Listeners</div>}
 
-            {/* ログビュー */}
             {activeView === 'logs' && recentLogs.map((log, i) => (
-              <div key={log.id} className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 ${i === 0 ? 'bg-indigo-600/10 border-indigo-500/30' : 'bg-slate-900/40 border-slate-800/50'}`}>
+              <div key={log.id} className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 ${i === 0 ? 'bg-indigo-600/10 border-indigo-500/30 shadow-[0_0_15px_rgba(99,102,241,0.1)]' : 'bg-slate-900/40 border-slate-800/50'}`}>
                 <div className="flex items-center gap-3 overflow-hidden">
                   <div className="flex-shrink-0 relative z-10">
                     {log.viewers?.unique_id ? (
-                      <a href={`https://www.tiktok.com/@${log.viewers.unique_id}`} target="_blank" rel="noopener noreferrer" className="block hover:opacity-80 transition-opacity">
+                      <a href={`https://www.tiktok.com/@${log.viewers.unique_id}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-3 hover:opacity-80 group/link">
                         {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-10 h-10 rounded-full border border-slate-700 object-cover" alt="" /> : <AvatarFallback name={log.viewers?.name || '?'} />}
+                        <div className="flex flex-col overflow-hidden">
+                          <span className="font-bold text-sm truncate flex items-center gap-1 text-slate-200 group-hover/link:underline decoration-slate-400 underline-offset-4">{log.viewers?.name || '不明'} <ExternalLink size={10} className="text-slate-600"/></span>
+                          <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</div>
+                        </div>
                       </a>
                     ) : (
-                      log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-10 h-10 rounded-full border border-slate-700 object-cover" alt="" /> : <AvatarFallback name={log.viewers?.name || '?'} />
+                      <div className="flex items-center gap-3">
+                        {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-10 h-10 rounded-full border border-slate-700 object-cover" alt="" /> : <AvatarFallback name={log.viewers?.name || '?'} />}
+                        <div className="flex flex-col overflow-hidden">
+                          <span className="font-bold text-sm truncate text-slate-300">{log.viewers?.name || '不明'}</span>
+                          <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</div>
+                        </div>
+                      </div>
                     )}
-                  </div>
-                  <div className="flex flex-col overflow-hidden relative z-10">
-                    {log.viewers?.unique_id ? (
-                      <a href={`https://www.tiktok.com/@${log.viewers.unique_id}`} target="_blank" rel="noopener noreferrer" className="font-bold text-sm truncate flex items-center gap-1 text-slate-200 hover:underline decoration-slate-400 underline-offset-4">
-                        {log.viewers?.name || '不明'} <ExternalLink size={10} className="text-slate-600"/>
-                      </a>
-                    ) : (
-                      <span className="font-bold text-sm truncate text-slate-300">{log.viewers?.name || '不明'}</span>
-                    )}
-                    <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-1 bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-3 py-1.5 rounded-xl border border-amber-500/20 flex-shrink-0 ml-2">
@@ -291,23 +273,15 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             <div className="bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md shadow-2xl relative pb-10 sm:pb-6 animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0" onClick={e => e.stopPropagation()}>
               <div className="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-6 sm:hidden"></div>
               <button onClick={() => setSelectedViewer(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 p-1.5 rounded-full"><X size={16}/></button>
-              
-              <div className="mb-6">
-                <h2 className="text-xl font-black text-white truncate pr-10">{selectedViewer.name}</h2>
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full">リスナー分析</span>
-                </div>
-              </div>
-              
+              <div className="mb-6"><h2 className="text-xl font-black text-white truncate pr-10">{selectedViewer.name}</h2><div className="flex items-center gap-2 mt-2"><span className="text-[10px] font-bold text-indigo-400 bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 rounded-full">リスナー分析</span></div></div>
               <div className="grid grid-cols-2 gap-3 mb-5">
                 <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800/80"><p className="text-[9px] text-slate-500 font-bold mb-1">初回来訪</p><p className="text-xs font-bold text-slate-200">{format(parseISO(viewerProfile.first_seen), 'yyyy/MM/dd')}</p></div>
                 <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800/80"><p className="text-[9px] text-slate-500 font-bold mb-1">総支援額</p><p className="text-sm font-black text-amber-400">{viewerProfile.total_coins.toLocaleString()} <span className="text-[9px] text-slate-500 font-normal">ダイヤ</span></p></div>
               </div>
-
               <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-800/80 h-[180px] flex flex-col mb-4">
                 <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">曜日別 投下トレンド</h4>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={Object.keys({'Monday':'月', 'Tuesday':'火', 'Wednesday':'水', 'Thursday':'木', 'Friday':'金', 'Saturday':'土', 'Sunday':'日'}).map(d => ({ name: {'Monday':'月', 'Tuesday':'火', 'Wednesday':'水', 'Thursday':'木', 'Friday':'金', 'Saturday':'土', 'Sunday':'日'}[d], coins: viewerProfile.day_of_week?.[d] || 0 }))}>
+                  <BarChart data={Object.keys(daysMap).map(d => ({ name: daysMap[d as keyof typeof daysMap], coins: viewerProfile.day_of_week?.[d] || 0 }))}>
                     <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
                     <Tooltip cursor={{fill: '#1e293b'}} contentStyle={{ backgroundColor: '#020617', borderColor: '#334155', borderRadius: '8px', fontSize: '10px' }} itemStyle={{ color: '#818cf8', fontWeight: 'bold' }} />
                     <Bar dataKey="coins" fill="#818cf8" radius={[4, 4, 0, 0]} />
