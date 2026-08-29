@@ -6,7 +6,7 @@ import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } fro
 import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
-type LiverStat = { system_id: string; username: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; pin_code: string; };
+type LiverStat = { system_id: string; username: string; liver_name?: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; pin_code: string; };
 type GiftLog = { id: number; created_at: string; coins: number; viewers: { name: string; unique_id?: string; avatar_url?: string } | null; };
 type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; };
 type ListenerProfile = { first_seen: string; last_seen: string; total_coins: number; day_of_week: Record<string, number>; hour_of_day: Record<string, number>; };
@@ -82,15 +82,16 @@ export default function Dashboard() {
   const fetchIntelligenceData = async () => {
     setLoading(true); 
     const { startIso, endIso } = getTimeBounds();
+    // ★ target_livers から liver_name も一緒に取得
     const [statsRes, metaRes] = await Promise.all([
       supabase.rpc('get_intelligence_stats', { p_start_date: startIso, p_end_date: endIso }),
-      supabase.from('target_livers').select('system_id, reward_rate, pin_code')
+      supabase.from('target_livers').select('system_id, reward_rate, pin_code, liver_name')
     ]);
 
     if (statsRes.data && metaRes.data) {
       const merged = (statsRes.data as LiverStat[]).map(stat => {
         const meta = metaRes.data.find(r => r.system_id === stat.system_id);
-        return { ...stat, reward_rate: meta?.reward_rate || 50, pin_code: meta?.pin_code || '0000' };
+        return { ...stat, reward_rate: meta?.reward_rate || 50, pin_code: meta?.pin_code || '0000', liver_name: meta?.liver_name };
       });
       setStats(merged);
     }
@@ -129,7 +130,8 @@ export default function Dashboard() {
       const res = await fetch(`/api/tiktok/profile?username=${cleanUsername}`);
       const data = await res.json();
       if (res.ok && data.userId) {
-        await executeAddLiver(data.userId, cleanUsername, data.avatarUrl);
+        // ★ 取得した nickname (表示名) も渡す
+        await executeAddLiver(data.userId, cleanUsername, data.avatarUrl, data.nickname);
       } else {
         alert('TikTokからの自動取得がブロックされました。システムIDを手動で入力してください。');
         setShowManualId(true);
@@ -142,12 +144,18 @@ export default function Dashboard() {
     }
   };
 
-  const executeAddLiver = async (systemId: string, username: string, avatarUrl?: string) => {
+  const executeAddLiver = async (systemId: string, username: string, avatarUrl?: string, nickname?: string) => {
     const { error } = await supabase.rpc('add_target_liver', { p_system_id: systemId, p_username: username });
     if (!error) {
-      if (avatarUrl) {
-        await supabase.from('target_livers').update({ avatar_url: avatarUrl }).eq('system_id', systemId);
+      const updateData: any = {};
+      if (avatarUrl) updateData.avatar_url = avatarUrl;
+      if (nickname) updateData.liver_name = nickname;
+      
+      // アバターか表示名があればDBをアップデート
+      if (Object.keys(updateData).length > 0) {
+        await supabase.from('target_livers').update(updateData).eq('system_id', systemId);
       }
+      
       setNewUsername('');
       setNewSystemId('');
       setShowManualId(false);
@@ -274,18 +282,6 @@ export default function Dashboard() {
               <button onClick={() => setActiveTab('total')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'total' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><Globe size={14} className="mr-1.5" /> 全期間</button>
               <button onClick={() => setActiveTab('custom')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'custom' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><CalendarSearch size={14} className="mr-1.5" /> 期間指定</button>
             </div>
-            {activeTab === 'custom' && (
-              <div className="flex items-center space-x-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800 shadow-inner animate-in fade-in">
-                <div className="bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors">
-                  <input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full h-full bg-transparent text-xs px-3 py-2 outline-none font-bold text-slate-300 cursor-pointer [color-scheme:dark]" />
-                </div>
-                <span className="text-slate-500">〜</span>
-                <div className="bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors">
-                  <input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full h-full bg-transparent text-xs px-3 py-2 outline-none font-bold text-slate-300 cursor-pointer [color-scheme:dark]" />
-                </div>
-                <button onClick={handleCustomFetch} disabled={!startDate || !endDate} className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors">解析実行</button>
-              </div>
-            )}
           </div>
         </header>
 
@@ -340,7 +336,6 @@ export default function Dashboard() {
                   <button onClick={() => { setIsAdding(false); setShowManualId(false); }} className="text-slate-400 hover:text-slate-200 p-2"><X size={16}/></button>
                 </div>
               ) : (
-                // ★ 「新規スカウト登録」から「ライバー追加」へ変更 ★
                 <button onClick={() => setIsAdding(true)} className="flex items-center text-xs font-bold text-slate-300 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 px-4 py-2 rounded-xl border border-indigo-500/30 transition-colors"><UserPlus size={14} className="mr-2" /> ライバー追加</button>
               )}
             </div>
@@ -366,18 +361,20 @@ export default function Dashboard() {
                   const isSafe = liver.dependency_rate < 50 && liver.total_coins > 0;
                   const isSelected = selectedLiverId === liver.system_id;
                   return (
-                    <tr key={liver.system_id} onClick={() => setSelectedLiverId(liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
+                    // ★ 修正: クリック時にすでに選択中なら解除（null）にするトグル仕様
+                    <tr key={liver.system_id} onClick={() => setSelectedLiverId(prev => prev === liver.system_id ? null : liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
                       <td className="p-4 pl-6 flex items-center gap-3 relative z-10">
                         <div 
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.tiktok.com/@${liver.username}`, '_blank'); }}
                           className="flex items-center gap-3 cursor-pointer group/link hover:opacity-80 transition-opacity"
                         >
-                          {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-9 h-9 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.username} size="w-9 h-9" textSize="text-xs" />}
+                          {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-9 h-9 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />}
                           <div className="flex flex-col">
+                            {/* ★ 修正: メインテキストを「表示名（ニックネーム）」にし、システムIDを排除 */}
                             <div className={`font-bold flex items-center gap-1 group-hover/link:underline underline-offset-4 decoration-slate-400 ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>
-                              {liver.username} <ExternalLink size={10} className="text-slate-500" />
+                              {liver.liver_name || liver.username} <ExternalLink size={10} className="text-slate-500" />
                             </div>
-                            <div className="text-[10px] text-slate-600 font-mono mt-0.5">{liver.system_id.slice(0, 10)}...</div>
+                            <div className="text-[11px] font-mono font-semibold text-indigo-400/90 mt-0.5">@{liver.username}</div>
                           </div>
                         </div>
                       </td>
@@ -453,7 +450,9 @@ export default function Dashboard() {
               
               <div className="flex items-center justify-between mb-6 relative z-10">
                 <h3 className="text-sm font-black text-slate-300 flex items-center">
-                  <Crown className="mr-2 h-5 w-5 text-amber-400" /> @{selectedLiver.username} - 貢献度ランキング (VIP CRM)
+                  <Crown className="mr-2 h-5 w-5 text-amber-400" /> 
+                  {/* ★修正: 詳細ヘッダーも「表示名」を優先 */}
+                  {selectedLiver.liver_name || selectedLiver.username} - 貢献度ランキング (VIP CRM)
                 </h3>
                 <div className="flex items-center gap-2">
                   <button onClick={() => handleCopyPortalUrl(selectedLiver.system_id)} className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${copiedId === selectedLiver.system_id ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}>

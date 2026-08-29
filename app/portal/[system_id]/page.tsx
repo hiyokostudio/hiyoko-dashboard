@@ -14,7 +14,8 @@ type LiverStat = { system_id: string; username: string; is_active: boolean; tota
 export default function LiverPortal({ params }: { params: Promise<{ system_id: string }> }) {
   const { system_id } = use(params);
   
-  const [liverInfo, setLiverInfo] = useState<{ username: string; avatar_url: string | null; reward_rate: number; pin_code: string } | null>(null);
+  // ★ liver_name（表示名）を追加
+  const [liverInfo, setLiverInfo] = useState<{ username: string; liver_name?: string; avatar_url: string | null; reward_rate: number; pin_code: string } | null>(null);
   const [liverStat, setLiverStat] = useState<LiverStat | null>(null);
   const [exchangeRate, setExchangeRate] = useState(145.00);
   const [recentLogs, setRecentLogs] = useState<GiftLog[]>([]);
@@ -36,7 +37,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
 
-  // ★ 管理者用マスターキー
   const adminMasterKey = "hiyoko_god_mode_2026";
 
   const getTimeBounds = () => {
@@ -48,17 +48,13 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   };
 
   useEffect(() => {
-    // ★ URLにマスターキー（God Mode）が含まれているかチェック
     const urlParams = new URLSearchParams(window.location.search);
     const godmode = urlParams.get('godmode');
     
     if (godmode === adminMasterKey) {
-      // マスターキーが一致すれば、PINを無視して無条件でロック解除
       setIsUnlocked(true);
-      // URLにマスターキーが残り続けるとコピペ事故の元なので、URLバーから消し去る（綺麗にする）
       window.history.replaceState({}, document.title, window.location.pathname);
     } else {
-      // マスターキーがない場合は、通常のローカルストレージチェック
       const unlocked = localStorage.getItem(`unlocked_portal_${system_id}`);
       if (unlocked === 'true') {
         setIsUnlocked(true);
@@ -112,7 +108,8 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const fetchData = async () => {
     setLoading(true);
     if (!liverInfo) {
-      const { data: liver } = await supabase.from('target_livers').select('username, avatar_url, reward_rate, pin_code').eq('system_id', system_id).single();
+      // ★ liver_name も一緒に取得する
+      const { data: liver } = await supabase.from('target_livers').select('username, liver_name, avatar_url, reward_rate, pin_code').eq('system_id', system_id).single();
       if (liver) setLiverInfo(liver as any);
       try { const res = await fetch('/api/exchange'); const data = await res.json(); if (data.rate) setExchangeRate(data.rate); } catch (e) {}
     }
@@ -166,9 +163,11 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
       <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center font-sans relative overflow-hidden select-none">
         <div className="absolute top-[-20%] left-[-20%] w-[140%] h-[60%] bg-indigo-600/10 blur-[120px] rounded-full pointer-events-none"></div>
         <div className="z-10 flex flex-col items-center w-full max-w-sm px-8">
-          {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-20 h-20 rounded-full border border-slate-700 object-cover mb-4 shadow-xl" alt=""/> : <AvatarFallback name={liverInfo.username} size="w-20 h-20" textSize="text-2xl" />}
-          <h1 className="text-xl font-black text-white mb-2">@{liverInfo.username}</h1>
-          <p className="text-xs font-bold text-slate-500 mb-8">4桁の暗証番号を入力してください</p>
+          {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-20 h-20 rounded-full border border-slate-700 object-cover mb-4 shadow-xl" alt=""/> : <AvatarFallback name={liverInfo.liver_name || liverInfo.username} size="w-20 h-20" textSize="text-2xl" />}
+          
+          {/* ★ 修正: ロック画面も「表示名」と「@ID」の美しい階層構造に */}
+          <h1 className="text-xl font-black text-white mb-1">{liverInfo.liver_name || liverInfo.username}</h1>
+          <p className="text-[11px] font-mono font-semibold text-indigo-400/80 mb-8 tracking-wider">@{liverInfo.username}</p>
           
           <div className={`flex gap-5 mb-12 ${pinError ? 'animate-[shake_0.4s_ease-in-out]' : ''}`}>
             {[0, 1, 2, 3].map(i => (
@@ -217,8 +216,12 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
 
         <header className="px-6 pt-10 pb-4 flex items-center justify-between gap-4 relative z-10">
           <div className="flex items-center gap-4">
-            {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-12 h-12 rounded-full border-2 border-indigo-500/50 object-cover shadow-[0_0_15px_rgba(99,102,241,0.4)]" alt=""/> : <AvatarFallback name={liverInfo.username} size="w-12 h-12" textSize="text-xl" />}
-            <div className="flex flex-col"><h1 className="text-xl font-black tracking-tight text-white leading-tight">{liverInfo.username}</h1><span className="text-[11px] text-slate-500 font-mono tracking-tighter mt-0.5">ID: {system_id}</span></div>
+            {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-12 h-12 rounded-full border-2 border-indigo-500/50 object-cover shadow-[0_0_15px_rgba(99,102,241,0.4)]" alt=""/> : <AvatarFallback name={liverInfo.liver_name || liverInfo.username} size="w-12 h-12" textSize="text-xl" />}
+            <div className="flex flex-col">
+              {/* ★ 修正: ポータル画面からもダサいシステムIDを完全排除 */}
+              <h1 className="text-xl font-black tracking-tight text-white leading-tight">{liverInfo.liver_name || liverInfo.username}</h1>
+              <span className="text-[12px] font-mono font-semibold text-indigo-400/90 mt-0.5 tracking-wider">@{liverInfo.username}</span>
+            </div>
           </div>
           <button 
             onClick={() => { localStorage.removeItem(`unlocked_portal_${system_id}`); setIsUnlocked(false); }}
