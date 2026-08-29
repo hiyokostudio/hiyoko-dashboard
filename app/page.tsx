@@ -36,9 +36,11 @@ export default function Dashboard() {
   const [isExporting, setIsExporting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // ★ PIN編集用ステート
   const [editingPin, setEditingPin] = useState<string | null>(null);
   const [editPinValue, setEditPinValue] = useState('');
+
+  // ★ 管理者用マスターキー（※本番では環境変数にする等しますが、今回は簡単なデモンストレーションとして固定文字列）
+  const adminMasterKey = "hiyoko_god_mode_2026";
 
   useEffect(() => {
     if (activeTab !== 'custom') fetchIntelligenceData();
@@ -81,7 +83,6 @@ export default function Dashboard() {
   const fetchIntelligenceData = async () => {
     setLoading(true); 
     const { startIso, endIso } = getTimeBounds();
-    // ★ pin_code も一緒に取得する
     const [statsRes, metaRes] = await Promise.all([
       supabase.rpc('get_intelligence_stats', { p_start_date: startIso, p_end_date: endIso }),
       supabase.from('target_livers').select('system_id, reward_rate, pin_code')
@@ -160,7 +161,6 @@ export default function Dashboard() {
 
   const toggleStatus = async (systemId: string, current: boolean) => { await supabase.from('target_livers').update({ is_active: !current }).eq('system_id', systemId); fetchIntelligenceData(); };
 
-  // ★ PINコードの保存処理
   const handlePinUpdate = async (systemId: string) => {
     if (!/^\d{4}$/.test(editPinValue)) {
       alert('PINは4桁の数字で入力してください。');
@@ -175,11 +175,17 @@ export default function Dashboard() {
     }
   };
 
+  // ★ コピーするURLには「マスターキー」を含めない（ライバーに送る用）
   const handleCopyPortalUrl = (systemId: string) => {
     const url = `${window.location.origin}/portal/${systemId}`;
     navigator.clipboard.writeText(url);
     setCopiedId(systemId);
     setTimeout(() => setCopiedId(null), 2000); 
+  };
+
+  // ★ 管理者がポータルを開く時は「マスターキー」付きのURLを開く
+  const handleOpenPortalAsAdmin = (systemId: string) => {
+    window.open(`/portal/${systemId}?godmode=${adminMasterKey}`, '_blank');
   };
 
   const handleExportCSV = async () => {
@@ -349,10 +355,7 @@ export default function Dashboard() {
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('core_fans')}>コアファン (1K+) <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 w-48 cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('dependency_rate')}>太客依存率 (TOP1) <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('reward_rate')}>報酬率 <ArrowUpDown size={10} className="inline ml-1" /></th>
-                  
-                  {/* ★PINコード列を追加 */}
                   <th className="p-4 text-center">PINコード</th>
-                  
                   <th className="p-4 text-center">健全度</th>
                   <th className="p-4 text-center pr-6">監視 / アクション</th>
                 </tr>
@@ -387,7 +390,6 @@ export default function Dashboard() {
                         <span className="font-bold text-slate-300 text-sm">{Number(liver.reward_rate).toFixed(1)}%</span>
                       </td>
 
-                      {/* ★ PINコード管理カラム */}
                       <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>
                         {editingPin === liver.system_id ? (
                           <div className="flex items-center justify-center gap-1">
@@ -416,11 +418,12 @@ export default function Dashboard() {
                       
                       <td className="p-4 pr-6 text-center" onClick={(e) => e.stopPropagation()}>
                          <div className="flex items-center justify-end gap-3">
+                           {/* ★ マトリックス行のポータルへ飛ぶボタンもマスターキー経由に */}
                            <div className="flex items-center gap-1 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
                              <button onClick={() => handleCopyPortalUrl(liver.system_id)} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition-colors tooltip-trigger relative">
                                {copiedId === liver.system_id ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
                              </button>
-                             <button onClick={() => window.open(`/portal/${liver.system_id}`, '_blank')} className="p-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-lg border border-indigo-500/30 transition-colors">
+                             <button onClick={() => handleOpenPortalAsAdmin(liver.system_id)} className="p-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-lg border border-indigo-500/30 transition-colors">
                                <Smartphone size={14} />
                              </button>
                            </div>
@@ -443,7 +446,6 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* VIP CRM ＆ 最新ログ */}
         {selectedLiverId && selectedLiver && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
             
@@ -458,7 +460,8 @@ export default function Dashboard() {
                   <button onClick={() => handleCopyPortalUrl(selectedLiver.system_id)} className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${copiedId === selectedLiver.system_id ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}>
                     {copiedId === selectedLiver.system_id ? <Check size={12} className="mr-1.5"/> : <Copy size={12} className="mr-1.5"/>} URLコピー
                   </button>
-                  <button onClick={() => window.open(`/portal/${selectedLiver.system_id}`, '_blank')} className="flex items-center text-xs font-bold px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all">
+                  {/* ★ 詳細画面のポータルへ飛ぶボタンもマスターキー経由に */}
+                  <button onClick={() => handleOpenPortalAsAdmin(selectedLiver.system_id)} className="flex items-center text-xs font-bold px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all">
                     <Smartphone size={12} className="mr-1.5"/> ポータルを確認
                   </button>
                 </div>

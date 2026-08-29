@@ -32,10 +32,12 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const [isEditingRate, setIsEditingRate] = useState(false);
   const [editRateValue, setEditRateValue] = useState('');
 
-  // ★ セキュリティ用ステート
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
+
+  // ★ 管理者用マスターキー
+  const adminMasterKey = "hiyoko_god_mode_2026";
 
   const getTimeBounds = () => {
     let startIso = null; let endIso = null; const now = new Date();
@@ -46,10 +48,21 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   };
 
   useEffect(() => {
-    // ローカルストレージで過去に認証済みかチェック
-    const unlocked = localStorage.getItem(`unlocked_portal_${system_id}`);
-    if (unlocked === 'true') {
+    // ★ URLにマスターキー（God Mode）が含まれているかチェック
+    const urlParams = new URLSearchParams(window.location.search);
+    const godmode = urlParams.get('godmode');
+    
+    if (godmode === adminMasterKey) {
+      // マスターキーが一致すれば、PINを無視して無条件でロック解除
       setIsUnlocked(true);
+      // URLにマスターキーが残り続けるとコピペ事故の元なので、URLバーから消し去る（綺麗にする）
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else {
+      // マスターキーがない場合は、通常のローカルストレージチェック
+      const unlocked = localStorage.getItem(`unlocked_portal_${system_id}`);
+      if (unlocked === 'true') {
+        setIsUnlocked(true);
+      }
     }
   }, [system_id]);
 
@@ -76,7 +89,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     if (selectedViewer) fetchViewerProfile(system_id, selectedViewer.id);
   }, [selectedViewer]);
 
-  // ★ PIN入力の判定処理
   useEffect(() => {
     if (pinInput.length === 4) {
       if (liverInfo && pinInput === (liverInfo.pin_code || '0000')) {
@@ -87,7 +99,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         setTimeout(() => {
           setPinInput('');
           setPinError(false);
-        }, 500); // ブルッと震えてリセット
+        }, 500); 
       }
     }
   }, [pinInput, liverInfo, system_id]);
@@ -100,7 +112,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const fetchData = async () => {
     setLoading(true);
     if (!liverInfo) {
-      // pin_code も一緒に取得する
       const { data: liver } = await supabase.from('target_livers').select('username, avatar_url, reward_rate, pin_code').eq('system_id', system_id).single();
       if (liver) setLiverInfo(liver as any);
       try { const res = await fetch('/api/exchange'); const data = await res.json(); if (data.rate) setExchangeRate(data.rate); } catch (e) {}
@@ -150,7 +161,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   if (loading && !liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-indigo-500 animate-pulse">CONNECTING...</div>;
   if (!liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-rose-500">LIVER NOT FOUND</div>;
 
-  // ★ 認証前は「ロック画面」を表示
   if (!isUnlocked) {
     return (
       <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center font-sans relative overflow-hidden select-none">
@@ -160,14 +170,12 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           <h1 className="text-xl font-black text-white mb-2">@{liverInfo.username}</h1>
           <p className="text-xs font-bold text-slate-500 mb-8">4桁の暗証番号を入力してください</p>
           
-          {/* インジケーター (●●●●) */}
           <div className={`flex gap-5 mb-12 ${pinError ? 'animate-[shake_0.4s_ease-in-out]' : ''}`}>
             {[0, 1, 2, 3].map(i => (
               <div key={i} className={`w-3.5 h-3.5 rounded-full transition-all duration-200 ${pinInput.length > i ? 'bg-indigo-500 shadow-[0_0_12px_rgba(99,102,241,0.8)] scale-110' : 'bg-slate-800'}`}></div>
             ))}
           </div>
 
-          {/* クールなテンキー */}
           <div className="grid grid-cols-3 gap-x-8 gap-y-6 w-full max-w-[280px]">
             {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
               <button key={num} onClick={() => pinInput.length < 4 && setPinInput(p => p + num)} className="w-16 h-16 rounded-full bg-slate-900/40 border border-slate-800/80 text-2xl font-mono text-white flex items-center justify-center hover:bg-slate-800 active:scale-90 active:bg-indigo-600/30 transition-all mx-auto shadow-sm">
@@ -192,7 +200,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     );
   }
 
-  // 認証成功後は通常のポータルを表示
   const totalCoins = liverStat?.total_coins || 0;
   const currentRewardUSD = totalCoins * (liverInfo.reward_rate / 10000);
   const currentRewardJPY = Math.floor(currentRewardUSD * exchangeRate);
@@ -213,7 +220,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-12 h-12 rounded-full border-2 border-indigo-500/50 object-cover shadow-[0_0_15px_rgba(99,102,241,0.4)]" alt=""/> : <AvatarFallback name={liverInfo.username} size="w-12 h-12" textSize="text-xl" />}
             <div className="flex flex-col"><h1 className="text-xl font-black tracking-tight text-white leading-tight">{liverInfo.username}</h1><span className="text-[11px] text-slate-500 font-mono tracking-tighter mt-0.5">ID: {system_id}</span></div>
           </div>
-          {/* ロックボタンを追加 */}
           <button 
             onClick={() => { localStorage.removeItem(`unlocked_portal_${system_id}`); setIsUnlocked(false); }}
             className="p-2 text-slate-600 hover:text-slate-300 bg-slate-900/50 rounded-full border border-slate-800 transition-colors"
