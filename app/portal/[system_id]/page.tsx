@@ -81,10 +81,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   }, [system_id, activePeriod, startDate, endDate]);
 
   useEffect(() => {
-    if (selectedViewer) fetchViewerProfile(system_id, selectedViewer.id);
-  }, [selectedViewer]);
-
-  useEffect(() => {
     if (pinInput.length === 4) {
       if (liverInfo && pinInput === (liverInfo.pin_code || '0000')) {
         localStorage.setItem(`unlocked_portal_${system_id}`, 'true');
@@ -359,6 +355,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                           >
                             {vip.unique_id ? `@${vip.unique_id}` : '@ID未取得'}
                           </span>
+                          {/* ★ ポータル画面にも不変の「初見日」を常時表示！ */}
                           <span className="text-[10px] text-slate-500 font-medium flex items-center">
                             <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}
                           </span>

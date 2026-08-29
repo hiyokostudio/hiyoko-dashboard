@@ -8,7 +8,7 @@ import { format, parseISO } from 'date-fns';
 
 type LiverStat = { system_id: string; username: string; liver_name?: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; pin_code: string; };
 type GiftLog = { id: number; created_at: string; coins: number; viewers: { name: string; unique_id?: string; avatar_url?: string } | null; };
-type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; };
+type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; first_seen?: string; };
 type ListenerProfile = { first_seen: string; last_seen: string; total_coins: number; day_of_week: Record<string, number>; hour_of_day: Record<string, number>; };
 
 export default function Dashboard() {
@@ -358,7 +358,6 @@ export default function Dashboard() {
                   const isSafe = liver.dependency_rate < 50 && liver.total_coins > 0;
                   const isSelected = selectedLiverId === liver.system_id;
                   return (
-                    // ★ 選択中のものをもう一度押したら解除（null）にする
                     <tr key={liver.system_id} onClick={() => setSelectedLiverId(prev => prev === liver.system_id ? null : liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
                       <td className="p-4 pl-6 flex items-center gap-3 relative z-10">
                         <div 
@@ -367,7 +366,6 @@ export default function Dashboard() {
                         >
                           {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-9 h-9 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />}
                           <div className="flex flex-col">
-                            {/* ★ 表示名（上段）と @ID（下段）を確実に両方表示する */}
                             <div className={`font-bold flex items-center gap-1 group-hover/link:underline underline-offset-4 decoration-slate-400 ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>
                               {liver.liver_name || liver.username} <ExternalLink size={10} className="text-slate-500" />
                             </div>
@@ -448,7 +446,6 @@ export default function Dashboard() {
               <div className="flex items-center justify-between mb-6 relative z-10">
                 <h3 className="text-sm font-black text-slate-300 flex items-center">
                   <Crown className="mr-2 h-5 w-5 text-amber-400" /> 
-                  {/* ★ 詳細ヘッダーも「表示名」と「@ID」を意識 */}
                   {selectedLiver.liver_name || selectedLiver.username} - 貢献度ランキング (VIP CRM)
                 </h3>
                 <div className="flex items-center gap-2">
@@ -525,7 +522,10 @@ export default function Dashboard() {
 
                         <div className="flex flex-col items-end ml-4 flex-shrink-0">
                           <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                          <span className="text-[10px] text-slate-500">ダイヤ</span>
+                          {/* ★ 管理画面のVIPリストにも「不変の初見日」を表示！ */}
+                          <span className="text-[10px] text-slate-500 font-medium flex items-center mt-1">
+                            <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}
+                          </span>
                         </div>
                       </div>
                     );
@@ -574,7 +574,7 @@ export default function Dashboard() {
                             <span className="text-[11px] font-mono font-semibold text-indigo-400/90 truncate">
                               {uniqueId ? `@${uniqueId}` : '@ID未取得'}
                             </span>
-                            <span className="text-[10px] font-medium text-slate-500">• {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
+                            <span className="text-[10px] font-medium text-slate-500 truncate">• {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
                           </div>
                         </div>
                       </div>
