@@ -44,16 +44,25 @@ export default function Dashboard() {
   useEffect(() => {
     if (activeTab !== 'custom') fetchIntelligenceData();
     
-    // ★ 巨大数値の丸め込み問題を回避するため、ID比較をせず「ギフトが来たら全体を更新する」という最強にシンプルな方法に変更
-    const channel = supabase.channel('public:gift_logs_all')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, () => {
+    // ★ 巨大数値の丸め込みを回避し、画面側で安全に文字比較する
+    const channel = supabase.channel('public:gift_logs')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, async (payload) => {
         if (activeTab !== 'custom') fetchIntelligenceData();
-        if (selectedLiverId) {
-          fetchDetailLogs(selectedLiverId);
-          fetchVips(selectedLiverId);
+        
+        if (selectedLiverId && String(selectedLiverId) === String(payload.new.liver_id)) {
+            // DB全体を再取得せず、送られてきた1件だけをリストに追加する最速・最軽量ロジック
+            const { data: viewerData } = await supabase.from('viewers').select('name, unique_id, avatar_url').eq('id', payload.new.viewer_id).single();
+            const newLog: GiftLog = { 
+              id: payload.new.id, 
+              created_at: payload.new.created_at, 
+              coins: payload.new.coins, 
+              viewers: { name: viewerData?.name || '不明', unique_id: viewerData?.unique_id, avatar_url: viewerData?.avatar_url } 
+            };
+            setDetailLogs(prev => [newLog, ...prev].slice(0, 50));
+            fetchVips(selectedLiverId);
         }
       }).subscribe();
-    
+      
     return () => { supabase.removeChannel(channel); };
   }, [activeTab, selectedLiverId]);
 
@@ -107,13 +116,13 @@ export default function Dashboard() {
 
   const fetchVips = async (systemId: string) => {
     const { startIso, endIso } = getTimeBounds();
-    // ★ 日付型エラー回避：空文字を送らず、パラメータを安全に構築して渡す
+    // ★ データベースに空文字を送らず、確実に値を渡す安全な設計
     const params: any = { p_system_id: systemId };
     if (startIso) params.p_start_date = startIso;
     if (endIso) params.p_end_date = endIso;
 
     const { data, error } = await supabase.rpc('get_liver_vips', params);
-    if (error) console.error("VIP取得エラー:", error);
+    if (error) console.error("VIP Fetch Error:", error);
     setVipListeners(data ? (data as VipListener[]) : []);
   };
 

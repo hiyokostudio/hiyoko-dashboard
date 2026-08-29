@@ -66,10 +66,25 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   }, [activePeriod, startDate, endDate, system_id]);
 
   useEffect(() => {
-    // ★ 巨大数値の丸め込み回避：画面側でID比較せず、ログが飛んできたらとりあえず全体更新
     const channel = supabase.channel(`portal:gift_logs_all`)
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, () => {
-        fetchData(); 
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, async (payload) => {
+        if (String(payload.new.liver_id) === String(system_id)) {
+            const { data: viewerData } = await supabase.from('viewers').select('name, unique_id, avatar_url').eq('id', payload.new.viewer_id).single();
+            const newLog: GiftLog = { 
+              id: payload.new.id, 
+              created_at: payload.new.created_at, 
+              coins: payload.new.coins, 
+              viewers: { name: viewerData?.name || '不明', unique_id: viewerData?.unique_id, avatar_url: viewerData?.avatar_url } 
+            };
+            setRecentLogs(prev => [newLog, ...prev].slice(0, 50));
+            
+            const { startIso, endIso } = getTimeBounds();
+            const params: any = { p_system_id: system_id };
+            if (startIso) params.p_start_date = startIso;
+            if (endIso) params.p_end_date = endIso;
+            const { data } = await supabase.rpc('get_liver_vips', params);
+            setVipListeners(data ? (data as VipListener[]) : []);
+        }
       }).subscribe();
     return () => { supabase.removeChannel(channel); };
   }, [system_id, activePeriod, startDate, endDate]);
@@ -110,14 +125,13 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     const { data: logsRes } = await query;
     if (logsRes) setRecentLogs(logsRes as unknown as GiftLog[]);
     
-    // ★ 日付型エラー回避：空文字を送らず、パラメータを安全に構築して渡す
+    // ★ データベースに空文字を送らず、確実に値を渡す安全な設計
     const params: any = { p_system_id: system_id };
     if (startIso) params.p_start_date = startIso;
     if (endIso) params.p_end_date = endIso;
 
-    const { data, error } = await supabase.rpc('get_liver_vips', params);
-    if (error) console.error("VIP取得エラー:", error);
-    setVipListeners(data ? (data as VipListener[]) : []);
+    const { data: vips } = await supabase.rpc('get_liver_vips', params);
+    setVipListeners(vips ? (vips as VipListener[]) : []);
 
     const { data: iData } = await supabase.rpc('get_intelligence_stats', { p_start_date: startIso, p_end_date: endIso });
     if (iData) {
