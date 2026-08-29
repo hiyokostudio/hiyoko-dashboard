@@ -1,5 +1,3 @@
-export const dynamic = 'force-dynamic';
-
 'use client';
 
 import { useEffect, useState, use } from 'react';
@@ -73,7 +71,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         event: 'INSERT', 
         schema: 'public', 
         table: 'gift_logs',
-        filter: `liver_id=eq.${system_id}` // サーバー側でフィルター
+        filter: `liver_id=eq.${system_id}`
       }, async () => {
         fetchData(); 
       }).subscribe();
