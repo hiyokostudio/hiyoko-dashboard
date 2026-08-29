@@ -39,7 +39,6 @@ export default function Dashboard() {
   const [editingPin, setEditingPin] = useState<string | null>(null);
   const [editPinValue, setEditPinValue] = useState('');
 
-  // ★ 管理者用マスターキー（※本番では環境変数にする等しますが、今回は簡単なデモンストレーションとして固定文字列）
   const adminMasterKey = "hiyoko_god_mode_2026";
 
   useEffect(() => {
@@ -175,7 +174,6 @@ export default function Dashboard() {
     }
   };
 
-  // ★ コピーするURLには「マスターキー」を含めない（ライバーに送る用）
   const handleCopyPortalUrl = (systemId: string) => {
     const url = `${window.location.origin}/portal/${systemId}`;
     navigator.clipboard.writeText(url);
@@ -183,7 +181,6 @@ export default function Dashboard() {
     setTimeout(() => setCopiedId(null), 2000); 
   };
 
-  // ★ 管理者がポータルを開く時は「マスターキー」付きのURLを開く
   const handleOpenPortalAsAdmin = (systemId: string) => {
     window.open(`/portal/${systemId}?godmode=${adminMasterKey}`, '_blank');
   };
@@ -342,7 +339,10 @@ export default function Dashboard() {
                   </button>
                   <button onClick={() => { setIsAdding(false); setShowManualId(false); }} className="text-slate-400 hover:text-slate-200 p-2"><X size={16}/></button>
                 </div>
-              ) : (<button onClick={() => setIsAdding(true)} className="flex items-center text-xs font-bold text-slate-300 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 px-4 py-2 rounded-xl border border-indigo-500/30 transition-colors"><UserPlus size={14} className="mr-2" /> 新規スカウト登録</button>)}
+              ) : (
+                // ★ 「新規スカウト登録」から「ライバー追加」へ変更 ★
+                <button onClick={() => setIsAdding(true)} className="flex items-center text-xs font-bold text-slate-300 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 px-4 py-2 rounded-xl border border-indigo-500/30 transition-colors"><UserPlus size={14} className="mr-2" /> ライバー追加</button>
+              )}
             </div>
           </div>
           <div className="overflow-x-auto max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
@@ -418,7 +418,6 @@ export default function Dashboard() {
                       
                       <td className="p-4 pr-6 text-center" onClick={(e) => e.stopPropagation()}>
                          <div className="flex items-center justify-end gap-3">
-                           {/* ★ マトリックス行のポータルへ飛ぶボタンもマスターキー経由に */}
                            <div className="flex items-center gap-1 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
                              <button onClick={() => handleCopyPortalUrl(liver.system_id)} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition-colors tooltip-trigger relative">
                                {copiedId === liver.system_id ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
@@ -460,7 +459,6 @@ export default function Dashboard() {
                   <button onClick={() => handleCopyPortalUrl(selectedLiver.system_id)} className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${copiedId === selectedLiver.system_id ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}>
                     {copiedId === selectedLiver.system_id ? <Check size={12} className="mr-1.5"/> : <Copy size={12} className="mr-1.5"/>} URLコピー
                   </button>
-                  {/* ★ 詳細画面のポータルへ飛ぶボタンもマスターキー経由に */}
                   <button onClick={() => handleOpenPortalAsAdmin(selectedLiver.system_id)} className="flex items-center text-xs font-bold px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all">
                     <Smartphone size={12} className="mr-1.5"/> ポータルを確認
                   </button>
