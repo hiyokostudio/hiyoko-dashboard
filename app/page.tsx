@@ -3,10 +3,10 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2 } from 'lucide-react';
+import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
-type LiverStat = { system_id: string; username: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; };
+type LiverStat = { system_id: string; username: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; pin_code: string; };
 type GiftLog = { id: number; created_at: string; coins: number; viewers: { name: string; unique_id?: string; avatar_url?: string } | null; };
 type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; };
 type ListenerProfile = { first_seen: string; last_seen: string; total_coins: number; day_of_week: Record<string, number>; hour_of_day: Record<string, number>; };
@@ -18,12 +18,11 @@ export default function Dashboard() {
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   
-  // ★ 登録用ステート
   const [isAdding, setIsAdding] = useState(false);
   const [newUsername, setNewUsername] = useState('');
   const [newSystemId, setNewSystemId] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const [showManualId, setShowManualId] = useState(false); // TikTokから取得失敗した時用のフォールバック
+  const [showManualId, setShowManualId] = useState(false);
 
   const [healthFilter, setHealthFilter] = useState<'all' | 'danger' | 'warning' | 'safe'>('all');
   const [sortConfig, setSortConfig] = useState<{key: keyof LiverStat, direction: 'asc'|'desc'}>({ key: 'total_coins', direction: 'desc' });
@@ -35,9 +34,11 @@ export default function Dashboard() {
   const [selectedViewer, setSelectedViewer] = useState<{id: string, name: string} | null>(null);
   const [viewerProfile, setViewerProfile] = useState<ListenerProfile | null>(null);
   const [isExporting, setIsExporting] = useState(false);
-  
-  // ★ コピー完了時のフィードバック用ステート
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // ★ PIN編集用ステート
+  const [editingPin, setEditingPin] = useState<string | null>(null);
+  const [editPinValue, setEditPinValue] = useState('');
 
   useEffect(() => {
     if (activeTab !== 'custom') fetchIntelligenceData();
@@ -80,15 +81,16 @@ export default function Dashboard() {
   const fetchIntelligenceData = async () => {
     setLoading(true); 
     const { startIso, endIso } = getTimeBounds();
-    const [statsRes, ratesRes] = await Promise.all([
+    // ★ pin_code も一緒に取得する
+    const [statsRes, metaRes] = await Promise.all([
       supabase.rpc('get_intelligence_stats', { p_start_date: startIso, p_end_date: endIso }),
-      supabase.from('target_livers').select('system_id, reward_rate')
+      supabase.from('target_livers').select('system_id, reward_rate, pin_code')
     ]);
 
-    if (statsRes.data && ratesRes.data) {
+    if (statsRes.data && metaRes.data) {
       const merged = (statsRes.data as LiverStat[]).map(stat => {
-        const rateData = ratesRes.data.find(r => r.system_id === stat.system_id);
-        return { ...stat, reward_rate: rateData?.reward_rate || 5000 };
+        const meta = metaRes.data.find(r => r.system_id === stat.system_id);
+        return { ...stat, reward_rate: meta?.reward_rate || 50, pin_code: meta?.pin_code || '0000' };
       });
       setStats(merged);
     }
@@ -115,27 +117,20 @@ export default function Dashboard() {
 
   const handleCustomFetch = () => { if (startDate && endDate) { fetchIntelligenceData(); if (selectedLiverId) { fetchDetailLogs(selectedLiverId); fetchVips(selectedLiverId); } } };
 
-  // ★ 魔法の自動検索＆追加機能
   const handleAddTarget = async () => {
     if (!newUsername.trim()) return;
-
-    // 手動入力モードが表示されていて、システムIDが入力されている場合はそのまま登録
     if (showManualId && newSystemId.trim()) {
       await executeAddLiver(newSystemId.trim(), newUsername.replace('@', '').trim());
       return;
     }
-
     setIsSearching(true);
     try {
       const cleanUsername = newUsername.replace('@', '').trim();
       const res = await fetch(`/api/tiktok/profile?username=${cleanUsername}`);
       const data = await res.json();
-
       if (res.ok && data.userId) {
-        // TikTokからシステムIDの取得に成功！
         await executeAddLiver(data.userId, cleanUsername, data.avatarUrl);
       } else {
-        // TikTokのセキュリティ(CAPTCHA等)で弾かれた場合のスマートなフォールバック
         alert('TikTokからの自動取得がブロックされました。システムIDを手動で入力してください。');
         setShowManualId(true);
       }
@@ -150,7 +145,6 @@ export default function Dashboard() {
   const executeAddLiver = async (systemId: string, username: string, avatarUrl?: string) => {
     const { error } = await supabase.rpc('add_target_liver', { p_system_id: systemId, p_username: username });
     if (!error) {
-      // アイコン画像が取得できていれば一緒に保存
       if (avatarUrl) {
         await supabase.from('target_livers').update({ avatar_url: avatarUrl }).eq('system_id', systemId);
       }
@@ -166,12 +160,26 @@ export default function Dashboard() {
 
   const toggleStatus = async (systemId: string, current: boolean) => { await supabase.from('target_livers').update({ is_active: !current }).eq('system_id', systemId); fetchIntelligenceData(); };
 
-  // ★ ポータルのURLをクリップボードにコピー
+  // ★ PINコードの保存処理
+  const handlePinUpdate = async (systemId: string) => {
+    if (!/^\d{4}$/.test(editPinValue)) {
+      alert('PINは4桁の数字で入力してください。');
+      return;
+    }
+    const { error } = await supabase.from('target_livers').update({ pin_code: editPinValue }).eq('system_id', systemId);
+    if (!error) {
+      setEditingPin(null);
+      fetchIntelligenceData();
+    } else {
+      alert('更新に失敗しました');
+    }
+  };
+
   const handleCopyPortalUrl = (systemId: string) => {
     const url = `${window.location.origin}/portal/${systemId}`;
     navigator.clipboard.writeText(url);
     setCopiedId(systemId);
-    setTimeout(() => setCopiedId(null), 2000); // 2秒後にチェックマークを戻す
+    setTimeout(() => setCopiedId(null), 2000); 
   };
 
   const handleExportCSV = async () => {
@@ -312,7 +320,6 @@ export default function Dashboard() {
                 <Download size={14} className="mr-2" /> {isExporting ? '生成中...' : 'CSV出力'}
               </button>
               
-              {/* ★ スカウト用の超絶UI */}
               {isAdding ? (
                 <div className="flex items-center space-x-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700 animate-in fade-in">
                   <div className="relative">
@@ -333,7 +340,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="overflow-x-auto max-h-[400px] overflow-y-auto scrollbar-thin scrollbar-thumb-slate-700 scrollbar-track-transparent">
-            <table className="w-full text-left border-collapse min-w-[900px] select-none relative">
+            <table className="w-full text-left border-collapse min-w-[1000px] select-none relative">
               <thead className="sticky top-0 z-10 bg-slate-950 shadow-md">
                 <tr className="text-[10px] font-black text-slate-500 border-b border-slate-800/80">
                   <th className="p-4 pl-6 cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('username')}>ライバー <ArrowUpDown size={10} className="inline ml-1" /></th>
@@ -341,6 +348,11 @@ export default function Dashboard() {
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('unique_listeners')}>ユニークリスナー <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('core_fans')}>コアファン (1K+) <ArrowUpDown size={10} className="inline ml-1" /></th>
                   <th className="p-4 w-48 cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('dependency_rate')}>太客依存率 (TOP1) <ArrowUpDown size={10} className="inline ml-1" /></th>
+                  <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('reward_rate')}>報酬率 <ArrowUpDown size={10} className="inline ml-1" /></th>
+                  
+                  {/* ★PINコード列を追加 */}
+                  <th className="p-4 text-center">PINコード</th>
+                  
                   <th className="p-4 text-center">健全度</th>
                   <th className="p-4 text-center pr-6">監視 / アクション</th>
                 </tr>
@@ -353,7 +365,6 @@ export default function Dashboard() {
                   return (
                     <tr key={liver.system_id} onClick={() => setSelectedLiverId(liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
                       <td className="p-4 pl-6 flex items-center gap-3 relative z-10">
-                        {/* ★ ライバーのアイコン＆名前をTikTokへのリンク化 */}
                         <div 
                           onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.tiktok.com/@${liver.username}`, '_blank'); }}
                           className="flex items-center gap-3 cursor-pointer group/link hover:opacity-80 transition-opacity"
@@ -373,6 +384,30 @@ export default function Dashboard() {
                       <td className="p-4"><div className="flex items-center gap-3"><span className="w-10 text-xs font-black text-slate-300 text-right">{liver.total_coins > 0 ? `${liver.dependency_rate}%` : '-'}</span><div className="flex-grow h-1.5 bg-slate-800 rounded-full overflow-hidden"><div className={`h-full rounded-full ${isDanger ? 'bg-rose-500' : isSafe ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(liver.total_coins > 0 ? liver.dependency_rate : 0, 100)}%` }}></div></div></div></td>
                       
                       <td className="p-4 text-center">
+                        <span className="font-bold text-slate-300 text-sm">{Number(liver.reward_rate).toFixed(1)}%</span>
+                      </td>
+
+                      {/* ★ PINコード管理カラム */}
+                      <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>
+                        {editingPin === liver.system_id ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <input type="text" maxLength={4} value={editPinValue} onChange={e => setEditPinValue(e.target.value.replace(/\D/g, ''))} className="w-12 bg-slate-950 border border-indigo-500 rounded px-1 py-0.5 text-xs text-center text-white outline-none font-mono tracking-widest" autoFocus />
+                            <button onClick={() => handlePinUpdate(liver.system_id)} className="text-emerald-400 hover:text-emerald-300"><Check size={14}/></button>
+                            <button onClick={() => setEditingPin(null)} className="text-slate-500 hover:text-slate-300"><X size={14}/></button>
+                          </div>
+                        ) : (
+                          <div 
+                            className="flex items-center justify-center gap-1.5 group/pin cursor-pointer border border-transparent hover:border-slate-700 hover:bg-slate-800/50 px-2 py-1 rounded transition-colors"
+                            onClick={() => { setEditingPin(liver.system_id); setEditPinValue(liver.pin_code); }}
+                          >
+                            <KeyRound size={12} className={liver.pin_code === '0000' ? 'text-amber-500/70' : 'text-slate-500'} />
+                            <span className={`font-mono text-xs font-bold tracking-widest ${liver.pin_code === '0000' ? 'text-amber-500' : 'text-slate-300'}`}>{liver.pin_code}</span>
+                            <Edit2 size={10} className="text-slate-600 group-hover/pin:text-indigo-400 opacity-0 group-hover/pin:opacity-100" />
+                          </div>
+                        )}
+                      </td>
+
+                      <td className="p-4 text-center">
                         {liver.total_coins === 0 ? <span className="text-[10px] font-bold text-slate-600 border border-slate-700 px-2 py-0.5 rounded">データなし</span>
                          : isDanger ? <span className="text-[10px] font-black text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded inline-flex items-center gap-1 w-20 justify-center"><AlertTriangle size={12}/> 危険</span>
                          : isSafe ? <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded inline-flex items-center gap-1 w-20 justify-center"><ShieldCheck size={12}/> 健全</span>
@@ -381,7 +416,6 @@ export default function Dashboard() {
                       
                       <td className="p-4 pr-6 text-center" onClick={(e) => e.stopPropagation()}>
                          <div className="flex items-center justify-end gap-3">
-                           {/* ★ マトリックス上にURLコピー＆ポータル展開ボタンを追加 */}
                            <div className="flex items-center gap-1 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
                              <button onClick={() => handleCopyPortalUrl(liver.system_id)} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition-colors tooltip-trigger relative">
                                {copiedId === liver.system_id ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
@@ -416,7 +450,6 @@ export default function Dashboard() {
             <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col relative overflow-hidden backdrop-blur-md h-[550px]">
               <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Crown size={120} /></div>
               
-              {/* ★ CRMヘッダーに「ポータルを開く」「URLコピー」の超絶便利ボタンを配置 */}
               <div className="flex items-center justify-between mb-6 relative z-10">
                 <h3 className="text-sm font-black text-slate-300 flex items-center">
                   <Crown className="mr-2 h-5 w-5 text-amber-400" /> @{selectedLiver.username} - 貢献度ランキング (VIP CRM)

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use } from 'react';
 import { supabase } from '@/utils/supabase';
-import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, Activity, ShieldCheck, AlertTriangle, Clock, X, BarChart2, Edit2, Check } from 'lucide-react';
+import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, Activity, ShieldCheck, AlertTriangle, Clock, X, BarChart2, Edit2, Check, Delete } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -14,7 +14,7 @@ type LiverStat = { system_id: string; username: string; is_active: boolean; tota
 export default function LiverPortal({ params }: { params: Promise<{ system_id: string }> }) {
   const { system_id } = use(params);
   
-  const [liverInfo, setLiverInfo] = useState<{ username: string; avatar_url: string | null; reward_rate: number } | null>(null);
+  const [liverInfo, setLiverInfo] = useState<{ username: string; avatar_url: string | null; reward_rate: number; pin_code: string } | null>(null);
   const [liverStat, setLiverStat] = useState<LiverStat | null>(null);
   const [exchangeRate, setExchangeRate] = useState(145.00);
   const [recentLogs, setRecentLogs] = useState<GiftLog[]>([]);
@@ -32,6 +32,11 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const [isEditingRate, setIsEditingRate] = useState(false);
   const [editRateValue, setEditRateValue] = useState('');
 
+  // ★ セキュリティ用ステート
+  const [isUnlocked, setIsUnlocked] = useState(false);
+  const [pinInput, setPinInput] = useState('');
+  const [pinError, setPinError] = useState(false);
+
   const getTimeBounds = () => {
     let startIso = null; let endIso = null; const now = new Date();
     if (activePeriod === 'custom' && startDate && endDate) { startIso = new Date(startDate).toISOString(); endIso = new Date(endDate).toISOString(); }
@@ -39,6 +44,14 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     else if (activePeriod === 'month') { const month = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })); month.setDate(1); month.setHours(0, 0, 0, 0); startIso = new Date(month.getTime() - 9 * 60 * 60 * 1000).toISOString(); }
     return { startIso, endIso };
   };
+
+  useEffect(() => {
+    // ローカルストレージで過去に認証済みかチェック
+    const unlocked = localStorage.getItem(`unlocked_portal_${system_id}`);
+    if (unlocked === 'true') {
+      setIsUnlocked(true);
+    }
+  }, [system_id]);
 
   useEffect(() => {
     if (activePeriod !== 'custom' || (startDate && endDate)) fetchData();
@@ -63,6 +76,22 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     if (selectedViewer) fetchViewerProfile(system_id, selectedViewer.id);
   }, [selectedViewer]);
 
+  // ★ PIN入力の判定処理
+  useEffect(() => {
+    if (pinInput.length === 4) {
+      if (liverInfo && pinInput === (liverInfo.pin_code || '0000')) {
+        localStorage.setItem(`unlocked_portal_${system_id}`, 'true');
+        setTimeout(() => setIsUnlocked(true), 200);
+      } else {
+        setPinError(true);
+        setTimeout(() => {
+          setPinInput('');
+          setPinError(false);
+        }, 500); // ブルッと震えてリセット
+      }
+    }
+  }, [pinInput, liverInfo, system_id]);
+
   const fetchViewerProfile = async (liverId: string, viewerId: string) => {
     const { data } = await supabase.rpc('get_listener_profile', { p_liver_id: liverId, p_viewer_id: viewerId });
     if (data) setViewerProfile(data as ListenerProfile);
@@ -71,7 +100,8 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const fetchData = async () => {
     setLoading(true);
     if (!liverInfo) {
-      const { data: liver } = await supabase.from('target_livers').select('username, avatar_url, reward_rate').eq('system_id', system_id).single();
+      // pin_code も一緒に取得する
+      const { data: liver } = await supabase.from('target_livers').select('username, avatar_url, reward_rate, pin_code').eq('system_id', system_id).single();
       if (liver) setLiverInfo(liver as any);
       try { const res = await fetch('/api/exchange'); const data = await res.json(); if (data.rate) setExchangeRate(data.rate); } catch (e) {}
     }
@@ -95,12 +125,10 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     setLoading(false);
   };
 
-  // ★修正：入力された数字（例：46.5）をそのまま保存するように変更
   const handleRateUpdate = async () => {
     const num = parseFloat(editRateValue);
     if (isNaN(num) || num < 0 || num > 100) return alert('正しい数値を入力してください');
-    
-    const rateVal = Number(num.toFixed(1)); // そのままの数字（小数点1位まで）
+    const rateVal = Number(num.toFixed(1));
     const { error } = await supabase.from('target_livers').update({ reward_rate: rateVal }).eq('system_id', system_id);
     if (!error) {
       setIsEditingRate(false);
@@ -109,19 +137,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
       alert('更新に失敗しました');
     }
   };
-
-  if (loading && !liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-indigo-500 animate-pulse">CONNECTING...</div>;
-  if (!liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-rose-500">LIVER NOT FOUND</div>;
-
-  const totalCoins = liverStat?.total_coins || 0;
-  const currentRewardUSD = totalCoins * (liverInfo.reward_rate / 10000);
-  const currentRewardJPY = Math.floor(currentRewardUSD * exchangeRate);
-  const unitPriceUSD = (1000 * (liverInfo.reward_rate / 10000)).toFixed(2);
-  const isDanger = (liverStat?.dependency_rate || 0) >= 80 && totalCoins > 0;
-
-  const daysMap = { 'Monday': '月', 'Tuesday': '火', 'Wednesday': '水', 'Thursday': '木', 'Friday': '金', 'Saturday': '土', 'Sunday': '日' };
-  const dowData = viewerProfile ? Object.keys(daysMap).map(d => ({ name: daysMap[d as keyof typeof daysMap], coins: viewerProfile.day_of_week?.[d] || 0 })) : [];
-  const hodData = viewerProfile ? Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 })) : [];
 
   const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => {
     const initial = name ? name.charAt(0) : '?';
@@ -132,14 +147,79 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     );
   };
 
+  if (loading && !liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-indigo-500 animate-pulse">CONNECTING...</div>;
+  if (!liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-rose-500">LIVER NOT FOUND</div>;
+
+  // ★ 認証前は「ロック画面」を表示
+  if (!isUnlocked) {
+    return (
+      <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center font-sans relative overflow-hidden select-none">
+        <div className="absolute top-[-20%] left-[-20%] w-[140%] h-[60%] bg-indigo-600/10 blur-[120px] rounded-full pointer-events-none"></div>
+        <div className="z-10 flex flex-col items-center w-full max-w-sm px-8">
+          {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-20 h-20 rounded-full border border-slate-700 object-cover mb-4 shadow-xl" alt=""/> : <AvatarFallback name={liverInfo.username} size="w-20 h-20" textSize="text-2xl" />}
+          <h1 className="text-xl font-black text-white mb-2">@{liverInfo.username}</h1>
+          <p className="text-xs font-bold text-slate-500 mb-8">4桁の暗証番号を入力してください</p>
+          
+          {/* インジケーター (●●●●) */}
+          <div className={`flex gap-5 mb-12 ${pinError ? 'animate-[shake_0.4s_ease-in-out]' : ''}`}>
+            {[0, 1, 2, 3].map(i => (
+              <div key={i} className={`w-3.5 h-3.5 rounded-full transition-all duration-200 ${pinInput.length > i ? 'bg-indigo-500 shadow-[0_0_12px_rgba(99,102,241,0.8)] scale-110' : 'bg-slate-800'}`}></div>
+            ))}
+          </div>
+
+          {/* クールなテンキー */}
+          <div className="grid grid-cols-3 gap-x-8 gap-y-6 w-full max-w-[280px]">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map(num => (
+              <button key={num} onClick={() => pinInput.length < 4 && setPinInput(p => p + num)} className="w-16 h-16 rounded-full bg-slate-900/40 border border-slate-800/80 text-2xl font-mono text-white flex items-center justify-center hover:bg-slate-800 active:scale-90 active:bg-indigo-600/30 transition-all mx-auto shadow-sm">
+                {num}
+              </button>
+            ))}
+            <div className="w-16 h-16 mx-auto"></div>
+            <button onClick={() => pinInput.length < 4 && setPinInput(p => p + '0')} className="w-16 h-16 rounded-full bg-slate-900/40 border border-slate-800/80 text-2xl font-mono text-white flex items-center justify-center hover:bg-slate-800 active:scale-90 active:bg-indigo-600/30 transition-all mx-auto shadow-sm">0</button>
+            <button onClick={() => setPinInput(p => p.slice(0, -1))} className="w-16 h-16 rounded-full text-slate-500 flex items-center justify-center hover:text-white active:scale-90 active:bg-slate-800 transition-all mx-auto">
+              <Delete size={24} />
+            </button>
+          </div>
+        </div>
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-10px); }
+            40%, 80% { transform: translateX(10px); }
+          }
+        `}} />
+      </div>
+    );
+  }
+
+  // 認証成功後は通常のポータルを表示
+  const totalCoins = liverStat?.total_coins || 0;
+  const currentRewardUSD = totalCoins * (liverInfo.reward_rate / 10000);
+  const currentRewardJPY = Math.floor(currentRewardUSD * exchangeRate);
+  const unitPriceUSD = (1000 * (liverInfo.reward_rate / 10000)).toFixed(2);
+  const isDanger = (liverStat?.dependency_rate || 0) >= 80 && totalCoins > 0;
+
+  const daysMap = { 'Monday': '月', 'Tuesday': '火', 'Wednesday': '水', 'Thursday': '木', 'Friday': '金', 'Saturday': '土', 'Sunday': '日' };
+  const dowData = viewerProfile ? Object.keys(daysMap).map(d => ({ name: daysMap[d as keyof typeof daysMap], coins: viewerProfile.day_of_week?.[d] || 0 })) : [];
+  const hodData = viewerProfile ? Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 })) : [];
+
   return (
-    <div className="min-h-screen bg-[#050505] text-slate-50 font-sans sm:pb-0 pb-10">
+    <div className="min-h-screen bg-[#050505] text-slate-50 font-sans sm:pb-0 pb-10 animate-in fade-in duration-500">
       <div className="max-w-md mx-auto min-h-screen bg-[#0A0A0A] border-x border-slate-900/50 shadow-2xl relative overflow-hidden flex flex-col">
         <div className="absolute top-[-10%] left-[-20%] w-[140%] h-[40%] bg-indigo-600/20 blur-[120px] rounded-full pointer-events-none"></div>
 
-        <header className="px-6 pt-10 pb-4 flex items-center gap-4 relative z-10">
-          {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-12 h-12 rounded-full border-2 border-indigo-500/50 object-cover shadow-[0_0_15px_rgba(99,102,241,0.4)]" alt=""/> : <AvatarFallback name={liverInfo.username} size="w-12 h-12" textSize="text-xl" />}
-          <div className="flex flex-col"><h1 className="text-xl font-black tracking-tight text-white leading-tight">{liverInfo.username}</h1><span className="text-[11px] text-slate-500 font-mono tracking-tighter mt-0.5">ID: {system_id}</span></div>
+        <header className="px-6 pt-10 pb-4 flex items-center justify-between gap-4 relative z-10">
+          <div className="flex items-center gap-4">
+            {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-12 h-12 rounded-full border-2 border-indigo-500/50 object-cover shadow-[0_0_15px_rgba(99,102,241,0.4)]" alt=""/> : <AvatarFallback name={liverInfo.username} size="w-12 h-12" textSize="text-xl" />}
+            <div className="flex flex-col"><h1 className="text-xl font-black tracking-tight text-white leading-tight">{liverInfo.username}</h1><span className="text-[11px] text-slate-500 font-mono tracking-tighter mt-0.5">ID: {system_id}</span></div>
+          </div>
+          {/* ロックボタンを追加 */}
+          <button 
+            onClick={() => { localStorage.removeItem(`unlocked_portal_${system_id}`); setIsUnlocked(false); }}
+            className="p-2 text-slate-600 hover:text-slate-300 bg-slate-900/50 rounded-full border border-slate-800 transition-colors"
+          >
+            <X size={16} />
+          </button>
         </header>
 
         <div className="px-6 relative z-10 mb-4">
