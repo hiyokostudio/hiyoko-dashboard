@@ -106,7 +106,7 @@ export default function Dashboard() {
 
   const fetchVips = async (systemId: string) => {
     const { startIso, endIso } = getTimeBounds();
-    const { data } = await supabase.rpc('get_liver_vips', { p_system_id: systemId, p_start_date: startIso, p_end_date: endIso });
+    const { data, error } = await supabase.rpc('get_liver_vips', { p_system_id: systemId, p_start_date: startIso, p_end_date: endIso });
     if (data) setVipListeners(data as VipListener[]);
   };
 
@@ -358,19 +358,20 @@ export default function Dashboard() {
                   const isSafe = liver.dependency_rate < 50 && liver.total_coins > 0;
                   const isSelected = selectedLiverId === liver.system_id;
                   return (
+                    // ★ 修正1: どこを押してもトグルで開閉できるようクリックを活かす
                     <tr key={liver.system_id} onClick={() => setSelectedLiverId(prev => prev === liver.system_id ? null : liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
                       <td className="p-4 pl-6 flex items-center gap-3 relative z-10">
-                        <div 
-                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.tiktok.com/@${liver.username}`, '_blank'); }}
-                          className="flex items-center gap-3 cursor-pointer group/link hover:opacity-80 transition-opacity"
-                        >
-                          {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-9 h-9 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />}
-                          <div className="flex flex-col">
-                            <div className={`font-bold flex items-center gap-1 group-hover/link:underline underline-offset-4 decoration-slate-400 ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>
-                              {liver.liver_name || liver.username} <ExternalLink size={10} className="text-slate-500" />
-                            </div>
-                            <div className="text-[11px] font-mono font-semibold text-indigo-400/90 mt-0.5">@{liver.username}</div>
+                        {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-9 h-9 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />}
+                        <div className="flex flex-col">
+                          {/* ★ 修正2: 「表示名」と「@ID」を確実に2個表示 */}
+                          <div className={`font-bold flex items-center gap-1 ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>
+                            {liver.liver_name || liver.username} 
+                            {/* ★ 修正3: TikTokへのリンクは「アイコン」だけにして、行のクリックを妨害しない */}
+                            <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.tiktok.com/@${liver.username}`, '_blank'); }} className="p-1 hover:bg-slate-800 rounded text-slate-500 hover:text-indigo-400 transition-colors">
+                              <ExternalLink size={12} />
+                            </button>
                           </div>
+                          <div className="text-[11px] font-mono font-semibold text-indigo-400/90">@{liver.username}</div>
                         </div>
                       </td>
                       <td className="p-4 text-right font-black text-slate-200">{liver.total_coins.toLocaleString()} <span className="text-[10px] text-slate-600 font-normal">ダイヤ</span></td>
@@ -444,10 +445,14 @@ export default function Dashboard() {
               <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Crown size={120} /></div>
               
               <div className="flex items-center justify-between mb-6 relative z-10">
-                <h3 className="text-sm font-black text-slate-300 flex items-center">
-                  <Crown className="mr-2 h-5 w-5 text-amber-400" /> 
-                  {selectedLiver.liver_name || selectedLiver.username} - 貢献度ランキング (VIP CRM)
-                </h3>
+                {/* ★ 修正4: CRMのヘッダーでも「表示名」と「@ID」を確実に併記 */}
+                <div className="flex items-center gap-2">
+                  <Crown className="h-5 w-5 text-amber-400" />
+                  <span className="text-sm font-black text-slate-200">{selectedLiver.liver_name || selectedLiver.username}</span>
+                  <span className="text-[11px] font-mono text-indigo-400/80 pt-0.5">@{selectedLiver.username}</span>
+                  <span className="text-sm font-black text-slate-400 ml-1">- 貢献度ランキング (VIP CRM)</span>
+                </div>
+
                 <div className="flex items-center gap-2">
                   <button onClick={() => handleCopyPortalUrl(selectedLiver.system_id)} className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${copiedId === selectedLiver.system_id ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}>
                     {copiedId === selectedLiver.system_id ? <Check size={12} className="mr-1.5"/> : <Copy size={12} className="mr-1.5"/>} URLコピー
@@ -522,7 +527,7 @@ export default function Dashboard() {
 
                         <div className="flex flex-col items-end ml-4 flex-shrink-0">
                           <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                          {/* ★ 管理画面のVIPリストにも「不変の初見日」を表示！ */}
+                          {/* ★ 修正5: 不変の初見日を管理画面にも表示！ */}
                           <span className="text-[10px] text-slate-500 font-medium flex items-center mt-1">
                             <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}
                           </span>

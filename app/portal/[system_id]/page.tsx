@@ -116,6 +116,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     const { data: logsRes } = await query;
     if (logsRes) setRecentLogs(logsRes as unknown as GiftLog[]);
     
+    // ★ 修正された不変の初見日を含むVIPデータを取得
     const { data: vips } = await supabase.rpc('get_liver_vips', { p_system_id: system_id, p_start_date: startIso, p_end_date: endIso });
     if (vips) setVipListeners(vips as VipListener[]);
 
@@ -159,8 +160,11 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         <div className="z-10 flex flex-col items-center w-full max-w-sm px-8">
           {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-20 h-20 rounded-full border border-slate-700 object-cover mb-4 shadow-xl" alt=""/> : <AvatarFallback name={liverInfo.liver_name || liverInfo.username} size="w-20 h-20" textSize="text-2xl" />}
           
-          <h1 className="text-xl font-black text-white mb-1">{liverInfo.liver_name || liverInfo.username}</h1>
-          <p className="text-[11px] font-mono font-semibold text-indigo-400/80 mb-8 tracking-wider">@{liverInfo.username}</p>
+          {/* ★ ロック画面も表示名と@IDを確実に2つ並べる */}
+          <div className="flex flex-col items-center justify-center">
+            <h1 className="text-xl font-black text-white mb-1">{liverInfo.liver_name || liverInfo.username}</h1>
+            <p className="text-[11px] font-mono font-semibold text-indigo-400/80 mb-8 tracking-wider">@{liverInfo.username}</p>
+          </div>
           
           <div className={`flex gap-5 mb-12 ${pinError ? 'animate-[shake_0.4s_ease-in-out]' : ''}`}>
             {[0, 1, 2, 3].map(i => (
@@ -211,6 +215,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           <div className="flex items-center gap-4">
             {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-12 h-12 rounded-full border-2 border-indigo-500/50 object-cover shadow-[0_0_15px_rgba(99,102,241,0.4)]" alt=""/> : <AvatarFallback name={liverInfo.liver_name || liverInfo.username} size="w-12 h-12" textSize="text-xl" />}
             <div className="flex flex-col">
+              {/* ★ メインポータルのヘッダーも「表示名」と「@ID」を確実に2個表示 */}
               <h1 className="text-xl font-black tracking-tight text-white leading-tight">{liverInfo.liver_name || liverInfo.username}</h1>
               <span className="text-[12px] font-mono font-semibold text-indigo-400/90 mt-0.5 tracking-wider">@{liverInfo.username}</span>
             </div>
@@ -355,7 +360,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                           >
                             {vip.unique_id ? `@${vip.unique_id}` : '@ID未取得'}
                           </span>
-                          {/* ★ ポータル画面にも不変の「初見日」を常時表示！ */}
+                          {/* ★ 不変の「絶対的な初見日」がブレずに表示される */}
                           <span className="text-[10px] text-slate-500 font-medium flex items-center">
                             <Clock size={10} className="mr-1 opacity-50"/> {vip.first_seen ? format(parseISO(vip.first_seen), 'yyyy/MM/dd') : 'データなし'}
                           </span>
@@ -414,7 +419,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                       <span className="text-[11px] font-mono font-semibold text-indigo-400/90 truncate">
                         {log.viewers?.unique_id ? `@${log.viewers.unique_id}` : '@ID未取得'}
                       </span>
-                      <span className="text-[10px] text-slate-500 font-medium truncate">• {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
+                      <span className="text-[10px] font-medium text-slate-500 truncate">• {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
                     </div>
                   </div>
                 </div>
