@@ -105,9 +105,15 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const dowData = viewerProfile ? Object.keys(daysMap).map(d => ({ name: daysMap[d as keyof typeof daysMap], coins: viewerProfile.day_of_week?.[d] || 0 })) : [];
   const hodData = viewerProfile ? Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 })) : [];
 
-  const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => (
-    <div className={`${size} rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-bold ${textSize} uppercase flex-shrink-0`}>{name.charAt(0)}</div>
-  );
+  // ★ TypeScriptエラーの原因を根絶した万能コンポーネント
+  const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => {
+    const initial = name ? name.charAt(0) : '?';
+    return (
+      <div className={`${size} rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-bold ${textSize} uppercase flex-shrink-0`}>
+        {initial}
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-[#050505] text-slate-50 font-sans sm:pb-0 pb-10">
@@ -191,7 +197,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                       {vip.rank === 1 ? <Crown size={16} className="text-amber-400 mx-auto" /> : vip.rank === 2 ? <Award size={16} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={16} className="text-amber-700 mx-auto" /> : <span className="text-xs font-bold text-slate-500">{vip.rank}</span>}
                     </div>
                     
-                    {/* ★アバター: アラート統一 */}
+                    {/* ★VIPアバター: window.open + アラート */}
                     <div 
                       className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
                       onClick={(e) => {
@@ -205,7 +211,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
 
                     <div className="flex-grow ml-3 min-w-0">
                       <div className="flex items-center gap-2 relative z-10">
-                        {/* ★名前: アラート統一 */}
+                        {/* ★VIP名前: window.open + アラート */}
                         <span 
                           onClick={(e) => {
                             e.preventDefault(); e.stopPropagation();
@@ -248,7 +254,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             {activeView === 'logs' && recentLogs.map((log, i) => (
               <div key={log.id} className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 ${i === 0 ? 'bg-indigo-600/10 border-indigo-500/30' : 'bg-slate-900/40 border-slate-800/50'}`}>
                 <div className="flex items-center gap-3 overflow-hidden">
-                  {/* ★ログのアバター: アラート統一 */}
+                  {/* ★ログのアバター: window.open + アラート */}
                   <div 
                     className={`flex-shrink-0 relative z-10 cursor-pointer ${log.viewers?.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
                     onClick={(e) => {
@@ -261,7 +267,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                   </div>
                   
                   <div className="flex flex-col overflow-hidden relative z-10">
-                    {/* ★ログの名前: アラート統一 */}
+                    {/* ★ログの名前: window.open + アラート */}
                     <span 
                       onClick={(e) => {
                         e.preventDefault(); e.stopPropagation();

@@ -169,9 +169,15 @@ export default function Dashboard() {
   const dowData = viewerProfile ? Object.keys(daysMap).map(d => ({ name: daysMap[d as keyof typeof daysMap], coins: viewerProfile.day_of_week?.[d] || 0 })) : [];
   const hodData = viewerProfile ? Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 })) : [];
 
-  const AvatarFallback = ({ name }: { name: string }) => (
-    <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-bold text-sm uppercase flex-shrink-0">{name.charAt(0)}</div>
-  );
+  // ★ TypeScriptエラーの原因になっていた部分を修正し、サイズ指定可能な万能コンポーネントに進化
+  const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => {
+    const initial = name ? name.charAt(0) : '?';
+    return (
+      <div className={`${size} rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-bold ${textSize} uppercase flex-shrink-0`}>
+        {initial}
+      </div>
+    );
+  };
 
   if (loading && stats.length === 0) return <div className="min-h-screen bg-slate-950 flex items-center justify-center font-bold text-slate-500">システム初期化中...</div>;
 
@@ -229,6 +235,7 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* マトリックス (ライバー一覧) */}
         <div className="bg-slate-900/80 rounded-3xl shadow-lg border border-slate-800 overflow-hidden backdrop-blur-md">
           <div className="p-5 border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/50">
             <h3 className="text-sm font-black text-slate-200">ライバー分析マトリックス {healthFilter !== 'all' && <span className="text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded ml-2">フィルター適用中</span>}</h3>
@@ -267,7 +274,7 @@ export default function Dashboard() {
                   return (
                     <tr key={liver.system_id} onClick={() => setSelectedLiverId(liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
                       <td className="p-4 pl-6 flex items-center gap-3">
-                        {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-8 h-8 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center text-slate-300 font-bold text-xs">{liver.username.charAt(0)}</div>}
+                        {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-8 h-8 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.username} size="w-8 h-8" textSize="text-xs" />}
                         <div><div className={`font-bold ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>{liver.username}</div><div className="text-[10px] text-slate-600 font-mono mt-0.5">{liver.system_id.slice(0, 10)}...</div></div>
                       </td>
                       <td className="p-4 text-right font-black text-slate-200">{liver.total_coins.toLocaleString()} <span className="text-[10px] text-slate-600 font-normal">ダイヤ</span></td>
@@ -326,7 +333,7 @@ export default function Dashboard() {
                           {vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto group-hover:scale-110 transition-transform" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}
                         </div>
                         
-                        {/* アバター: window.open + アラート統一 */}
+                        {/* アバター: window.open + アラート */}
                         <div 
                           className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
                           onClick={(e) => {
@@ -340,7 +347,7 @@ export default function Dashboard() {
 
                         <div className="flex-grow ml-4 min-w-0">
                           <div className="flex items-center gap-3 relative z-10">
-                            {/* 名前: window.open + アラート統一 */}
+                            {/* 名前: window.open + アラート */}
                             <span 
                               onClick={(e) => {
                                 e.preventDefault(); e.stopPropagation();
@@ -379,7 +386,7 @@ export default function Dashboard() {
                 {detailLogs.map((log) => (
                   <div key={log.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-800/80 transition-colors border border-slate-800/50">
                     <div className="flex items-center gap-3 overflow-hidden">
-                      {/* ★ログのアバター: アラート追加 */}
+                      {/* ★ログのアバター: window.open + アラート */}
                       <div 
                         className={`flex-shrink-0 relative z-10 cursor-pointer ${log.viewers?.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`}
                         onClick={(e) => {
@@ -388,10 +395,10 @@ export default function Dashboard() {
                           else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
                         }}
                       >
-                        {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover" alt=""/> : <AvatarFallback name={log.viewers?.name || '?'} />}
+                        {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-8 h-8 rounded-full border border-slate-700 object-cover" alt=""/> : <AvatarFallback name={log.viewers?.name || '?'} size="w-8 h-8" textSize="text-xs" />}
                       </div>
                       
-                      {/* ★ログの名前: アラート追加 */}
+                      {/* ★ログの名前: window.open + アラート */}
                       <div className="flex flex-col overflow-hidden relative z-10">
                         <span 
                           onClick={(e) => {
