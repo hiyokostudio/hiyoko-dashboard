@@ -23,6 +23,8 @@ export default function Dashboard() {
   const [newSystemId, setNewSystemId] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [showManualId, setShowManualId] = useState(false);
+  // ★追加: アラート撲滅用の美しいエラーUIステート
+  const [addError, setAddError] = useState<string | null>(null);
 
   const [healthFilter, setHealthFilter] = useState<'all' | 'danger' | 'warning' | 'safe'>('all');
   const [sortConfig, setSortConfig] = useState<{key: keyof LiverStat, direction: 'asc'|'desc'}>({ key: 'total_coins', direction: 'desc' });
@@ -44,13 +46,11 @@ export default function Dashboard() {
   useEffect(() => {
     if (activeTab !== 'custom') fetchIntelligenceData();
     
-    // ★ 巨大数値の丸め込みを回避し、画面側で安全に文字比較する
     const channel = supabase.channel('public:gift_logs')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, async (payload) => {
         if (activeTab !== 'custom') fetchIntelligenceData();
         
         if (selectedLiverId && String(selectedLiverId) === String(payload.new.liver_id)) {
-            // DB全体を再取得せず、送られてきた1件だけをリストに追加する最速・最軽量ロジック
             const { data: viewerData } = await supabase.from('viewers').select('name, unique_id, avatar_url').eq('id', payload.new.viewer_id).single();
             const newLog: GiftLog = { 
               id: payload.new.id, 
@@ -116,7 +116,6 @@ export default function Dashboard() {
 
   const fetchVips = async (systemId: string) => {
     const { startIso, endIso } = getTimeBounds();
-    // ★ データベースに空文字を送らず、確実に値を渡す安全な設計
     const params: any = { p_system_id: systemId };
     if (startIso) params.p_start_date = startIso;
     if (endIso) params.p_end_date = endIso;
@@ -133,6 +132,7 @@ export default function Dashboard() {
 
   const handleCustomFetch = () => { if (startDate && endDate) { fetchIntelligenceData(); if (selectedLiverId) { fetchDetailLogs(selectedLiverId); fetchVips(selectedLiverId); } } };
 
+  // ★修正: アラートを撲滅し、UI上で美しくエラーを処理する最新ロジック
   const handleAddTarget = async () => {
     if (!newUsername.trim()) return;
     if (showManualId && newSystemId.trim()) {
@@ -140,18 +140,21 @@ export default function Dashboard() {
       return;
     }
     setIsSearching(true);
+    setAddError(null);
     try {
       const cleanUsername = newUsername.replace('@', '').trim();
-      const res = await fetch(`/api/tiktok/profile?username=${cleanUsername}`);
+      // ★ログ遅延の原因(キャッシュ)をAPI側で強制無効化するタイムスタンプ付与
+      const res = await fetch(`/api/tiktok/profile?username=${cleanUsername}&_t=${Date.now()}`);
       const data = await res.json();
+      
       if (res.ok && data.userId) {
         await executeAddLiver(data.userId, cleanUsername, data.avatarUrl, data.nickname);
       } else {
-        alert('TikTokからの自動取得がブロックされました。システムIDを手動で入力してください。');
+        setAddError('自動取得に失敗しました。お手数ですがシステムIDをご入力ください。');
         setShowManualId(true);
       }
     } catch (e) {
-      alert('通信エラーが発生しました。システムIDを手動で入力してください。');
+      setAddError('通信エラーが発生しました。お手数ですがシステムIDをご入力ください。');
       setShowManualId(true);
     } finally {
       setIsSearching(false);
@@ -173,9 +176,10 @@ export default function Dashboard() {
       setNewSystemId('');
       setShowManualId(false);
       setIsAdding(false);
+      setAddError(null);
       fetchIntelligenceData();
     } else {
-      alert('データベースへの追加に失敗しました。既に登録されている可能性があります。');
+      setAddError('データベース追加失敗。既に登録されている可能性があります。');
     }
   };
 
@@ -345,20 +349,28 @@ export default function Dashboard() {
               </button>
               
               {isAdding ? (
-                <div className="flex items-center space-x-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700 animate-in fade-in">
-                  <div className="relative">
-                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold">@</span>
-                    <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="TikTok IDを入力" className="text-xs pl-6 pr-3 py-2 outline-none w-40 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono" disabled={isSearching} />
-                  </div>
-                  
-                  {showManualId && (
-                    <input type="text" value={newSystemId} onChange={e => setNewSystemId(e.target.value)} placeholder="システムID (手動)" className="text-xs px-3 py-2 outline-none w-32 bg-slate-950 border border-rose-500/50 rounded-lg text-white font-mono" />
-                  )}
+                // ★修正: アラートを廃止し、美しくエラーを表示するUI構造に変更
+                <div className="flex flex-col items-end gap-2 animate-in fade-in">
+                  <div className="flex items-center space-x-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700">
+                    <div className="relative">
+                      <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold">@</span>
+                      <input type="text" value={newUsername} onChange={e => {setNewUsername(e.target.value); setAddError(null);}} placeholder="TikTok IDを入力" className="text-xs pl-6 pr-3 py-2 outline-none w-40 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono" disabled={isSearching} />
+                    </div>
+                    
+                    {showManualId && (
+                      <input type="text" value={newSystemId} onChange={e => setNewSystemId(e.target.value)} placeholder="システムID (手動)" className="text-xs px-3 py-2 outline-none w-32 bg-slate-950 border border-rose-500/50 rounded-lg text-white font-mono" />
+                    )}
 
-                  <button onClick={handleAddTarget} disabled={isSearching || !newUsername} className="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors w-24">
-                    {isSearching ? <Loader2 size={14} className="animate-spin" /> : (showManualId ? '強制追加' : '検索＆追加')}
-                  </button>
-                  <button onClick={() => { setIsAdding(false); setShowManualId(false); }} className="text-slate-400 hover:text-slate-200 p-2"><X size={16}/></button>
+                    <button onClick={handleAddTarget} disabled={isSearching || !newUsername} className="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors min-w-[100px]">
+                      {isSearching ? <Loader2 size={14} className="animate-spin" /> : (showManualId ? '強制追加' : '検索＆追加')}
+                    </button>
+                    <button onClick={() => { setIsAdding(false); setShowManualId(false); setAddError(null); }} className="text-slate-400 hover:text-slate-200 p-2"><X size={16}/></button>
+                  </div>
+                  {addError && (
+                    <div className="flex items-center gap-1.5 text-[10px] font-bold text-rose-400 bg-rose-500/10 border border-rose-500/20 px-3 py-1.5 rounded-lg w-full animate-in slide-in-from-top-1">
+                      <AlertTriangle size={12} /> {addError}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <button onClick={() => setIsAdding(true)} className="flex items-center text-xs font-bold text-slate-300 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 px-4 py-2 rounded-xl border border-indigo-500/30 transition-colors"><UserPlus size={14} className="mr-2" /> ライバー追加</button>
