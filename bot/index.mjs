@@ -82,8 +82,6 @@ function connectToLive(systemId, username) {
   const connection = new TikTokLiveConnection(username, {
     processInitialData: false,
     enableExtendedGiftInfo: true,
-    enableWebsocketUpgrade: true,
-    requestPollingIntervalMs: 2000,
     clientParams: {
       "app_language": "ja-JP",
       "device_platform": "web"
