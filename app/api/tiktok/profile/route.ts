@@ -11,7 +11,6 @@ export async function GET(request: Request) {
   const cleanUsername = username.replace('@', '').trim();
 
   try {
-    // 💡 対策1: より強力なモバイルブラウザ(iPhone)偽装ヘッダーを使用する
     const headers = {
       'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
@@ -24,10 +23,9 @@ export async function GET(request: Request) {
       'Upgrade-Insecure-Requests': '1',
     };
 
-    // Botのアクセスパターン（即時リクエスト）を回避する微小なランダム遅延（ジッター）
+    // Botのアクセスパターンを回避する微小なランダム遅延
     await new Promise(resolve => setTimeout(resolve, Math.random() * 500 + 100));
 
-    // メインのスクレイピング (言語指定を付けてPCからのBotアクセスと区別させる)
     let response = await fetch(`https://www.tiktok.com/@${cleanUsername}?lang=ja-JP`, {
       headers,
       next: { revalidate: 0 }
@@ -35,7 +33,6 @@ export async function GET(request: Request) {
 
     if (!response.ok) {
       console.warn(`[Profile API] メインルートがブロックされました (Status: ${response.status})。フォールバックを試みます...`);
-      // 💡 対策2: メインがブロックされた場合、共有URL用の内部エンドポイント（WAFが緩い傾向にある）へ迂回
       response = await fetch(`https://m.tiktok.com/node/share/user/@${cleanUsername}`, {
         headers,
         next: { revalidate: 0 }
@@ -47,7 +44,6 @@ export async function GET(request: Request) {
 
     const html = await response.text();
 
-    // 隠されたデータ（JSON）を正規表現で抽出
     const scriptRegex = /<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application\/json">([^<]+)<\/script>/;
     const match = html.match(scriptRegex);
 
@@ -66,7 +62,6 @@ export async function GET(request: Request) {
       }
     }
 
-    // もし正規表現で見つからなかった場合（m.tiktok.com/node/... の場合は直接JSONが返ることがある）
     try {
       const json = JSON.parse(html);
       const userInfo = json?.userInfo?.user;
@@ -84,13 +79,12 @@ export async function GET(request: Request) {
 
     throw new Error('データが見つかりません。Bot対策WAFにより遮断されている可能性があります。');
 
-  } catch (error: any) {
-    console.error('TikTok Scrape Error:', error.message);
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+    console.error('TikTok Scrape Error:', errorMessage);
     
-    // 完全に弾かれた場合は、UI側ですでに実装してある「手動追加モード (showManualId)」に
-    // スムーズに移行させるため、エラーを適切に返す。
     return NextResponse.json({ 
-        error: error.message || '通信エラーが発生しました。手動でシステムIDを入力してください。',
+        error: errorMessage || '通信エラーが発生しました。手動でシステムIDを入力してください。',
     }, { status: 500 });
   }
 }
