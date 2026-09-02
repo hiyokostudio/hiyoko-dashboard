@@ -1,24 +1,13 @@
-import { createRequire } from 'module';
+// 💡 旧WebcastPushConnection ではなく、最新仕様の TikTokLiveConnection を読み込む
+import { TikTokLiveConnection } from 'tiktok-live-connector';
 import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-const require = createRequire(import.meta.url);
-const pkg = require('tiktok-live-connector');
+const __dirname = dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: join(__dirname, '../.env.local') });
 
-// 1. クラスの自動探索（エラー回避の最終兵器）
-let WebcastPushConnection = pkg.WebcastPushConnection || pkg.default?.WebcastPushConnection;
-if (!WebcastPushConnection) {
-  const keys = Object.keys(pkg);
-  const foundKey = keys.find(k => k.includes('Connection') && typeof pkg[k] === 'function');
-  if (foundKey) {
-    WebcastPushConnection = pkg[foundKey];
-  } else {
-    console.error("🚨 接続クラス不在。パッケージ内の全機能名リスト:");
-    console.error(keys.join(', '));
-    throw new Error("リスト抽出完了。上のログを確認してください。");
-  }
-}
-
-// 2. Supabaseクライアントの初期化
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -29,16 +18,17 @@ if (!supabaseUrl || !supabaseKey) {
 
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// 3. 状態管理
 const activeConnections = new Map();
 const retryCounts = new Map();
 const retryTimeouts = new Map();
-const MAX_RETRIES = 5;
-const BASE_RETRY_DELAY = 5000;
 
-console.log('🤖 Hiyoko Intelligence: 監視Botエンジン起動 (自己修復・Exponential Backoff搭載)');
+console.log('🤖 Hiyoko Intelligence: 監視Botエンジン起動 (v2最新仕様・自己修復搭載)');
 
-// 4. 監視対象の確認と接続管理
+async function startBot() {
+  setInterval(checkTargets, 30000);
+  checkTargets();
+}
+
 async function checkTargets() {
   console.log(`🔍 DBから監視対象を確認中...`);
 
@@ -46,19 +36,17 @@ async function checkTargets() {
     .from('target_livers')
     .select('system_id, username')
     .eq('is_active', true);
-
+    
   if (error) {
     console.error('❌ Supabase取得エラー:', error.message);
     return;
   }
 
   console.log(`✅ 現在の有効な監視対象: ${targets?.length || 0} 人`);
-
   if (!targets || targets.length === 0) return;
 
   const activeSystemIds = new Set(targets.map(t => t.system_id));
 
-  // 監視対象から外れたものを切断
   for (const [systemId, connection] of activeConnections.entries()) {
     if (!activeSystemIds.has(systemId)) {
       console.log(`⏹️ [${systemId}] 監視対象から外れました。切断します。`);
@@ -72,7 +60,6 @@ async function checkTargets() {
     }
   }
 
-  // 新規対象に接続
   for (const target of targets) {
     if (!activeConnections.has(target.system_id) && !retryTimeouts.has(target.system_id)) {
       connectToLive(target.system_id, target.username);
@@ -80,12 +67,19 @@ async function checkTargets() {
   }
 }
 
-// 5. ライブ接続ロジック
+function getBackoffDelay(retryCount) {
+  const baseDelay = 2000; 
+  const maxDelay = 60000; 
+  const delay = Math.min(baseDelay * Math.pow(2, retryCount), maxDelay) + Math.random() * 1000;
+  return Math.floor(delay);
+}
+
 function connectToLive(systemId, username) {
   const currentRetry = retryCounts.get(systemId) || 0;
-  console.log(`🚀 [${username} (${systemId})] 接続試行中... (リトライ回数: ${currentRetry})`);
-
-  const connection = new WebcastPushConnection(username, {
+  console.log(`📡 [${username} (${systemId})] 接続試行中... (リトライ回数: ${currentRetry})`);
+  
+  // 💡 正しい最新のクラスで接続パーツを組み立てる
+  const connection = new TikTokLiveConnection(username, {
     processInitialData: false,
     enableExtendedGiftInfo: true,
     enableWebsocketUpgrade: true,
@@ -95,109 +89,113 @@ function connectToLive(systemId, username) {
       "device_platform": "web"
     }
   });
+  
+  activeConnections.set(systemId, connection);
 
-  connection.connect().then(state => {
+  connection.connect().then(async state => {
     console.log(`✅ [${username}] 接続成功! RoomID: ${state.roomId}`);
-    activeConnections.set(systemId, connection);
-    retryCounts.delete(systemId); 
-
-    connection.on('chat', async (data) => {
-      await saveEvent(systemId, 'comment', {
-        username: data.uniqueId,
-        display_name: data.nickname,
-        comment_text: data.comment,
-        profile_picture_url: data.profilePictureUrl
-      });
-    });
-
-    connection.on('gift', async (data) => {
-      if (data.giftType === 1 && !data.repeatEnd) return; 
-      await saveEvent(systemId, 'gift', {
-        username: data.uniqueId,
-        display_name: data.nickname,
-        comment_text: `ギフトを送信しました`,
-        gift_id: data.giftId,
-        gift_name: data.giftName,
-        gift_value: data.diamondCount * data.repeatCount,
-        profile_picture_url: data.profilePictureUrl
-      });
-    });
-
-    connection.on('like', async (data) => {
-      await saveEvent(systemId, 'like', {
-        username: data.uniqueId,
-        display_name: data.nickname,
-        comment_text: `いいねを${data.likeCount}回送りました`,
-        profile_picture_url: data.profilePictureUrl
-      });
-    });
-
-    connection.on('member', async (data) => {
-      await saveEvent(systemId, 'join', {
-        username: data.uniqueId,
-        display_name: data.nickname,
-        comment_text: `配信に参加しました`,
-        profile_picture_url: data.profilePictureUrl
-      });
-    });
-
+    retryCounts.set(systemId, 0); 
+    try {
+      const avatarUrl = state.roomInfo?.owner?.avatar_thumb?.url_list?.[0];
+      const liverName = state.roomInfo?.owner?.nickname;
+      const updateData = {};
+      if (avatarUrl) updateData.avatar_url = avatarUrl;
+      if (liverName) updateData.liver_name = liverName;
+      if (Object.keys(updateData).length > 0) {
+        await supabase.from('target_livers').update(updateData).eq('system_id', systemId);
+      }
+    } catch (e) {}
   }).catch(err => {
     console.error(`❌ [${username}] 接続エラー:`, err.message);
-    handleDisconnect(systemId, username);
+    handleDisconnect(systemId, username, false);
+  });
+
+  connection.on('gift', async data => {
+    if (data.giftType === 1 && !data.repeatEnd) return; 
+    const coins = data.diamondCount * (data.repeatCount || 1);
+    if (coins <= 0) return;
+
+    try {
+      const { data: viewer } = await supabase
+        .from('viewers')
+        .upsert(
+          { 
+            id: data.userId.toString(),
+            unique_id: data.uniqueId,
+            name: data.nickname,
+            avatar_url: data.profilePictureUrl,
+            updated_at: new Date().toISOString() 
+          }, 
+          { onConflict: 'id' }
+        )
+        .select('id')
+        .single();
+
+      await supabase.from('gift_logs').insert({
+        liver_id: systemId,
+        viewer_id: viewer.id,
+        gift_id: data.giftId.toString(),
+        gift_name: data.giftName || 'ギフト',
+        coins: coins,
+        count: data.repeatCount || 1
+      });
+    } catch (e) {
+      console.error(`❌ [${username}] DB書込エラー:`, e.message);
+    }
+  });
+
+  connection.on('streamEnd', () => {
+    console.log(`🔴 [${username}] 配信終了`);
+    handleDisconnect(systemId, username, true);
   });
 
   connection.on('disconnected', () => {
-    console.log(`🔌 [${username}] 切断されました。`);
-    handleDisconnect(systemId, username);
+    console.warn(`🔌 [${username}] WebSocketが不意に切断されました`);
+    handleDisconnect(systemId, username, false);
   });
 
   connection.on('error', err => {
-    console.error(`⚠️ [${username}] エラー発生:`, err.message);
+    console.error(`🚨 [${username}] 内部エラー:`, err.message);
+    handleDisconnect(systemId, username, false);
   });
 }
 
-// 6. 切断時の自動再接続（バックオフ）
-function handleDisconnect(systemId, username) {
-  activeConnections.delete(systemId);
-  const currentRetry = retryCounts.get(systemId) || 0;
-  
-  if (currentRetry >= MAX_RETRIES) {
-    console.log(`🛑 [${username}] 最大リトライ回数(${MAX_RETRIES})に達しました。一時停止します。`);
+function handleDisconnect(systemId, username, isStreamEnd) {
+  if (activeConnections.has(systemId)) {
+    try { activeConnections.get(systemId).disconnect(); } catch (e) {}
+    activeConnections.delete(systemId);
+  }
+
+  if (isStreamEnd) {
+    retryCounts.set(systemId, 0); 
     return;
   }
 
-  const delay = BASE_RETRY_DELAY * Math.pow(2, currentRetry);
+  let currentRetry = retryCounts.get(systemId) || 0;
+  const delay = getBackoffDelay(currentRetry);
   retryCounts.set(systemId, currentRetry + 1);
-  
-  console.log(`⏳ [${username}] ${delay / 1000}秒後に再接続します...`);
-  const timeout = setTimeout(() => {
-    retryTimeouts.delete(systemId);
-    connectToLive(systemId, username);
-  }, delay);
-  
-  retryTimeouts.set(systemId, timeout);
-}
 
-// 7. DB保存ロジック
-async function saveEvent(systemId, eventType, data) {
-  const { error } = await supabase
-    .from('live_comments')
-    .insert({
-      target_id: systemId,
-      event_type: eventType,
-      username: data.username,
-      display_name: data.display_name,
-      comment_text: data.comment_text,
-      gift_id: data.gift_id || null,
-      gift_name: data.gift_name || null,
-      gift_value: data.gift_value || 0,
-      profile_picture_url: data.profile_picture_url || null
-    });
+  console.log(`🔄 [${username}] ${Math.round(delay / 1000)}秒後に再接続を試行します...`);
 
-  if (error) {
-    console.error(`❌ DB保存エラー (${eventType}):`, error.message);
+  if (retryTimeouts.has(systemId)) {
+    clearTimeout(retryTimeouts.get(systemId));
   }
+
+  const timeoutId = setTimeout(() => {
+    retryTimeouts.delete(systemId);
+    supabase.from('target_livers').select('is_active').eq('system_id', systemId).single()
+      .then(({ data }) => {
+        if (data && data.is_active) {
+          connectToLive(systemId, username);
+        } else {
+          console.log(`⏹️ [${username}] 待機中に監視対象から外れたため再接続をキャンセル`);
+        }
+      }).catch(() => {
+        connectToLive(systemId, username);
+      });
+  }, delay);
+
+  retryTimeouts.set(systemId, timeoutId);
 }
 
-checkTargets();
-setInterval(checkTargets, 30000);
+startBot();
