@@ -1,7 +1,18 @@
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
-const tiktokLive = require('tiktok-live-connector');
-const WebcastPushConnection = tiktokLive.WebcastPushConnection || tiktokLive;
+const pkg = require('tiktok-live-connector');
+
+// パッケージ内のあらゆる階層からコンストラクタ（クラス）を自動探索する
+const WebcastPushConnection = 
+  typeof pkg === 'function' ? pkg :
+  typeof pkg?.WebcastPushConnection === 'function' ? pkg.WebcastPushConnection :
+  typeof pkg?.default?.WebcastPushConnection === 'function' ? pkg.default.WebcastPushConnection :
+  typeof pkg?.default === 'function' ? pkg.default : null;
+
+if (!WebcastPushConnection) {
+  console.log("🚨 パッケージ中身ダンプ:", pkg);
+  throw new Error("クラスが見つかりません。上のダンプログを確認してください。");
+}
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
