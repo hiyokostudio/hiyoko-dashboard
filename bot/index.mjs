@@ -1,5 +1,6 @@
-import pkg from 'tiktok-live-connector';
-const { WebcastPushConnection } = pkg;
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const { WebcastPushConnection } = require('tiktok-live-connector');
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
