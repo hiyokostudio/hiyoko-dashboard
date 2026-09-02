@@ -25,12 +25,21 @@ async function startBot() {
 }
 
 async function checkTargets() {
+  console.log(`🔍 DBから監視対象を確認中...`);
+  
   const { data: targets, error } = await supabase
     .from('target_livers')
     .select('system_id, username')
     .eq('is_active', true);
     
-  if (error || !targets) return;
+  if (error) {
+    console.error('❌ Supabase取得エラー:', error.message);
+    return;
+  }
+  
+  console.log(`✅ 現在の有効な監視対象: ${targets?.length || 0} 人`);
+
+  if (!targets || targets.length === 0) return;
 
   const activeSystemIds = new Set(targets.map(t => t.system_id));
 
