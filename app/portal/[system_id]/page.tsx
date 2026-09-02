@@ -6,7 +6,7 @@ import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, User
 import { format, parseISO } from 'date-fns';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-type GiftLog = { id: number; created_at: string; coins: number; viewers: { name: string; unique_id?: string; avatar_url?: string } | null; };
+type GiftLog = { id: number; created_at: string; coins: number; gift_name?: string; viewers: { name: string; unique_id?: string; avatar_url?: string } | null; };
 type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; first_seen?: string; };
 type ListenerProfile = { first_seen: string; last_seen: string; total_coins: number; day_of_week: Record<string, number>; hour_of_day: Record<string, number>; };
 type LiverStat = { system_id: string; username: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; };
@@ -73,7 +73,8 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             const newLog: GiftLog = { 
               id: payload.new.id, 
               created_at: payload.new.created_at, 
-              coins: payload.new.coins, 
+              coins: payload.new.coins,
+              gift_name: payload.new.gift_name,
               viewers: { name: viewerData?.name || '不明', unique_id: viewerData?.unique_id, avatar_url: viewerData?.avatar_url } 
             };
             setRecentLogs(prev => [newLog, ...prev].slice(0, 50));
@@ -118,14 +119,13 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     }
 
     const { startIso, endIso } = getTimeBounds();
-    let query = supabase.from('gift_logs').select('id, created_at, coins, viewers(name, unique_id, avatar_url)').eq('liver_id', system_id).order('created_at', { ascending: false }).limit(50);
+    let query = supabase.from('gift_logs').select('id, created_at, coins, gift_name, viewers(name, unique_id, avatar_url)').eq('liver_id', system_id).order('created_at', { ascending: false }).limit(50);
     if (startIso) query = query.gte('created_at', startIso); 
     if (endIso) query = query.lte('created_at', endIso); 
 
     const { data: logsRes } = await query;
     if (logsRes) setRecentLogs(logsRes as unknown as GiftLog[]);
     
-    // ★ データベースに空文字を送らず、確実に値を渡す安全な設計
     const params: any = { p_system_id: system_id };
     if (startIso) params.p_start_date = startIso;
     if (endIso) params.p_end_date = endIso;
@@ -446,8 +446,12 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                     </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-1 bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-3 py-1.5 rounded-xl border border-amber-500/20 flex-shrink-0 ml-2">
-                  <Coins size={14} className="text-amber-400"/><span className="font-black text-amber-400 text-sm">+{log.coins}</span>
+                
+                <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                  {log.gift_name && <span className="text-[10px] font-bold text-slate-400 truncate max-w-[60px]" title={log.gift_name}>{log.gift_name}</span>}
+                  <div className="flex items-center gap-1 bg-gradient-to-r from-amber-500/20 to-orange-500/20 px-3 py-1.5 rounded-xl border border-amber-500/20">
+                    <Coins size={14} className="text-amber-400"/><span className="font-black text-amber-400 text-sm">+{log.coins}</span>
+                  </div>
                 </div>
               </div>
             ))}

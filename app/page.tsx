@@ -7,7 +7,7 @@ import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, Calenda
 import { format, parseISO } from 'date-fns';
 
 type LiverStat = { system_id: string; username: string; liver_name?: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; pin_code: string; };
-type GiftLog = { id: number; created_at: string; coins: number; viewers: { name: string; unique_id?: string; avatar_url?: string } | null; };
+type GiftLog = { id: number; created_at: string; coins: number; gift_name?: string; viewers: { name: string; unique_id?: string; avatar_url?: string } | null; };
 type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; first_seen?: string; };
 type ListenerProfile = { first_seen: string; last_seen: string; total_coins: number; day_of_week: Record<string, number>; hour_of_day: Record<string, number>; };
 
@@ -53,7 +53,8 @@ export default function Dashboard() {
             const newLog: GiftLog = { 
               id: payload.new.id, 
               created_at: payload.new.created_at, 
-              coins: payload.new.coins, 
+              coins: payload.new.coins,
+              gift_name: payload.new.gift_name,
               viewers: { name: viewerData?.name || '不明', unique_id: viewerData?.unique_id, avatar_url: viewerData?.avatar_url } 
             };
             setDetailLogs(prev => [newLog, ...prev].slice(0, 50));
@@ -106,7 +107,7 @@ export default function Dashboard() {
   };
 
   const fetchDetailLogs = async (systemId: string) => {
-    let query = supabase.from('gift_logs').select('id, created_at, coins, viewers(name, unique_id, avatar_url)').eq('liver_id', systemId).order('created_at', { ascending: false }).limit(50);
+    let query = supabase.from('gift_logs').select('id, created_at, coins, gift_name, viewers(name, unique_id, avatar_url)').eq('liver_id', systemId).order('created_at', { ascending: false }).limit(50);
     const { startIso, endIso } = getTimeBounds();
     if (startIso) query = query.gte('created_at', startIso); if (endIso) query = query.lte('created_at', endIso);
     const { data } = await query; if (data) setDetailLogs(data as unknown as GiftLog[]);
@@ -207,14 +208,14 @@ export default function Dashboard() {
     setIsExporting(true);
     const { startIso, endIso } = getTimeBounds();
     
-    let query = supabase.from('gift_logs').select(`created_at, coins, liver_id, target_livers(username), viewers(name, unique_id)`).order('created_at', { ascending: false });
+    let query = supabase.from('gift_logs').select(`created_at, coins, gift_name, liver_id, target_livers(username), viewers(name, unique_id)`).order('created_at', { ascending: false });
     if (startIso) query = query.gte('created_at', startIso);
     if (endIso) query = query.lte('created_at', endIso);
     
     const { data, error } = await query;
     if (error || !data) { alert('データのエクスポートに失敗しました'); setIsExporting(false); return; }
 
-    const headers = ['日付', '時間', 'ライバー', 'リスナー', 'TikTok ID', '獲得ダイヤ'];
+    const headers = ['日付', '時間', 'ライバー', 'リスナー', 'TikTok ID', 'ギフト名', '獲得ダイヤ'];
     const rows = data.map((log: any) => {
       const d = new Date(log.created_at);
       return [
@@ -222,6 +223,7 @@ export default function Dashboard() {
         `"${log.target_livers?.username || log.liver_id}"`,
         `"${log.viewers?.name || '不明'}"`,
         log.viewers?.unique_id || '',
+        `"${log.gift_name || ''}"`,
         log.coins
       ].join(',');
     });
@@ -613,8 +615,12 @@ export default function Dashboard() {
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 whitespace-nowrap ml-2 flex-shrink-0">
-                        <span className="font-black text-emerald-400 text-xs">+{log.coins}</span>
+                      
+                      <div className="flex items-center gap-3 ml-2 flex-shrink-0">
+                        {log.gift_name && <span className="text-[10px] font-bold text-slate-400 truncate max-w-[80px]" title={log.gift_name}>{log.gift_name}</span>}
+                        <div className="flex items-center bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20 whitespace-nowrap">
+                          <span className="font-black text-emerald-400 text-xs">+{log.coins}</span>
+                        </div>
                       </div>
                     </div>
                   );

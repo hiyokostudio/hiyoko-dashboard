@@ -131,6 +131,7 @@ function connectToLive(systemId, username) {
         liver_id: systemId,
         viewer_id: viewer.id,
         gift_id: data.giftId.toString(),
+        gift_name: data.giftName || 'ギフト',
         coins: coins,
         count: data.repeatCount || 1
       });
