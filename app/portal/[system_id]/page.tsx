@@ -38,6 +38,21 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
 
   const adminMasterKey = "hiyoko_god_mode_2026";
 
+  const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => {
+    const initial = name ? name.charAt(0) : '?';
+    return (
+      <div className={`${size} rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-bold ${textSize} uppercase flex-shrink-0`}>
+        {initial}
+      </div>
+    );
+  };
+
+  const SafeAvatar = ({ src, name, size = "w-10 h-10", textSize = "text-sm", extraClass = "" }: { src?: string | null, name: string, size?: string, textSize?: string, extraClass?: string }) => {
+    const [imgError, setImgError] = useState(false);
+    if (!src || imgError) return <AvatarFallback name={name} size={size} textSize={textSize} />;
+    return <img src={src} onError={() => setImgError(true)} className={`${size} rounded-full border border-slate-700 object-cover flex-shrink-0 ${extraClass}`} alt=""/>;
+  };
+
   const getTimeBounds = () => {
     let startIso = null; let endIso = null; const now = new Date();
     if (activePeriod === 'custom' && startDate && endDate) { startIso = new Date(startDate).toISOString(); endIso = new Date(endDate).toISOString(); }
@@ -154,15 +169,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     }
   };
 
-  const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => {
-    const initial = name ? name.charAt(0) : '?';
-    return (
-      <div className={`${size} rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-bold ${textSize} uppercase flex-shrink-0`}>
-        {initial}
-      </div>
-    );
-  };
-
   if (loading && !liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-indigo-500 animate-pulse">CONNECTING...</div>;
   if (!liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-rose-500">LIVER NOT FOUND</div>;
 
@@ -171,7 +177,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
       <div className="min-h-screen bg-[#050505] flex flex-col items-center justify-center font-sans relative overflow-hidden select-none">
         <div className="absolute top-[-20%] left-[-20%] w-[140%] h-[60%] bg-indigo-600/10 blur-[120px] rounded-full pointer-events-none"></div>
         <div className="z-10 flex flex-col items-center w-full max-w-sm px-8">
-          {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-20 h-20 rounded-full border border-slate-700 object-cover mb-4 shadow-xl" alt=""/> : <AvatarFallback name={liverInfo.liver_name || liverInfo.username} size="w-20 h-20" textSize="text-2xl" />}
+          <SafeAvatar src={liverInfo.avatar_url} name={liverInfo.liver_name || liverInfo.username} size="w-20 h-20" textSize="text-2xl" extraClass="mb-4 shadow-xl" />
           
           <div className="flex flex-col items-center justify-center">
             <h1 className="text-xl font-black text-white mb-1">{liverInfo.liver_name || liverInfo.username}</h1>
@@ -225,7 +231,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
 
         <header className="px-6 pt-10 pb-4 flex items-center justify-between gap-4 relative z-10">
           <div className="flex items-center gap-4">
-            {liverInfo.avatar_url ? <img src={liverInfo.avatar_url} className="w-12 h-12 rounded-full border-2 border-indigo-500/50 object-cover shadow-[0_0_15px_rgba(99,102,241,0.4)]" alt=""/> : <AvatarFallback name={liverInfo.liver_name || liverInfo.username} size="w-12 h-12" textSize="text-xl" />}
+            <SafeAvatar src={liverInfo.avatar_url} name={liverInfo.liver_name || liverInfo.username} size="w-12 h-12" textSize="text-xl" extraClass="border-2 border-indigo-500/50 shadow-[0_0_15px_rgba(99,102,241,0.4)]" />
             <div className="flex flex-col">
               <h1 className="text-xl font-black tracking-tight text-white leading-tight">{liverInfo.liver_name || liverInfo.username}</h1>
               <span className="text-[12px] font-mono font-semibold text-indigo-400/90 mt-0.5 tracking-wider">@{liverInfo.username}</span>
@@ -348,7 +354,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                         else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
                       }}
                     >
-                      {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
+                      <SafeAvatar src={vip.avatar_url} name={vip.viewer_name} size="w-10 h-10" />
                     </div>
 
                     <div className="flex-grow ml-3 min-w-0">
@@ -424,7 +430,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                       else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
                     }}
                   >
-                    {log.viewers?.avatar_url ? <img src={log.viewers.avatar_url} className="w-10 h-10 rounded-full border border-slate-700 object-cover" alt="" /> : <AvatarFallback name={log.viewers?.name || '?'} />}
+                    <SafeAvatar src={log.viewers?.avatar_url} name={log.viewers?.name || '?'} size="w-10 h-10" />
                   </div>
                   
                   <div className="flex flex-col overflow-hidden relative z-10">

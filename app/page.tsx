@@ -41,6 +41,21 @@ export default function Dashboard() {
 
   const adminMasterKey = "hiyoko_god_mode_2026";
 
+  const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => {
+    const initial = name ? name.charAt(0) : '?';
+    return (
+      <div className={`${size} rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-bold ${textSize} uppercase flex-shrink-0`}>
+        {initial}
+      </div>
+    );
+  };
+
+  const SafeAvatar = ({ src, name, size = "w-10 h-10", textSize = "text-sm", extraClass = "" }: { src?: string | null, name: string, size?: string, textSize?: string, extraClass?: string }) => {
+    const [imgError, setImgError] = useState(false);
+    if (!src || imgError) return <AvatarFallback name={name} size={size} textSize={textSize} />;
+    return <img src={src} onError={() => setImgError(true)} className={`${size} rounded-full border border-slate-700 object-cover flex-shrink-0 ${extraClass}`} alt=""/>;
+  };
+
   useEffect(() => {
     if (activeTab !== 'custom') fetchIntelligenceData();
     
@@ -270,15 +285,6 @@ export default function Dashboard() {
   const dowData = viewerProfile ? Object.keys(daysMap).map(d => ({ name: daysMap[d as keyof typeof daysMap], coins: viewerProfile.day_of_week?.[d] || 0 })) : [];
   const hodData = viewerProfile ? Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 })) : [];
 
-  const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => {
-    const initial = name ? name.charAt(0) : '?';
-    return (
-      <div className={`${size} rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-300 font-bold ${textSize} uppercase flex-shrink-0`}>
-        {initial}
-      </div>
-    );
-  };
-
   if (loading && stats.length === 0) return <div className="min-h-screen bg-slate-950 flex items-center justify-center font-bold text-slate-500">システム初期化中...</div>;
 
   return (
@@ -388,7 +394,7 @@ export default function Dashboard() {
                     <tr key={liver.system_id} onClick={() => setSelectedLiverId(prev => prev === liver.system_id ? null : liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
                       <td className="p-4 pl-6 flex items-center gap-3 relative z-10">
                         <div className="flex items-center gap-3 cursor-pointer group/link hover:opacity-80 transition-opacity">
-                          {liver.avatar_url ? <img src={liver.avatar_url} alt="" className="w-9 h-9 rounded-full border border-slate-700 object-cover flex-shrink-0" /> : <AvatarFallback name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />}
+                          <SafeAvatar src={liver.avatar_url} name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />
                           <div className="flex flex-col">
                             <div className={`font-bold flex items-center gap-1 ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>
                               {liver.liver_name || liver.username} 
@@ -518,7 +524,7 @@ export default function Dashboard() {
                               else alert('TikTok IDがまだ取得されていません（次回ギフト受信時に自動取得されます）');
                             }}
                           >
-                            {vip.avatar_url ? <img src={vip.avatar_url} alt="" className="w-10 h-10 rounded-full border border-slate-700 object-cover" /> : <AvatarFallback name={vip.viewer_name} />}
+                            <SafeAvatar src={vip.avatar_url} name={vip.viewer_name} size="w-10 h-10" />
                           </div>
 
                           <div className="flex-grow ml-4 min-w-0">
@@ -595,11 +601,7 @@ export default function Dashboard() {
                         className="flex items-center gap-3 overflow-hidden cursor-pointer group/log relative z-10"
                         onClick={handleClickViewer}
                       >
-                        {avatarUrl ? (
-                          <img src={avatarUrl} className="w-9 h-9 rounded-full border border-slate-700 object-cover flex-shrink-0 group-hover/log:opacity-80 transition-opacity" alt=""/>
-                        ) : (
-                          <AvatarFallback name={viewerName} size="w-9 h-9" textSize="text-xs" />
-                        )}
+                        <SafeAvatar src={avatarUrl} name={viewerName} size="w-9 h-9" textSize="text-xs" extraClass="group-hover/log:opacity-80 transition-opacity" />
                         <div className="flex flex-col overflow-hidden">
                           <div className="flex items-center gap-1.5">
                             <span className="font-bold text-slate-200 text-sm truncate group-hover/log:underline decoration-slate-400 underline-offset-2">
