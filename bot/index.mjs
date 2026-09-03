@@ -1,4 +1,3 @@
-// 💡 旧WebcastPushConnection ではなく、最新仕様の TikTokLiveConnection を読み込む
 import { TikTokLiveConnection } from 'tiktok-live-connector';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
@@ -22,7 +21,21 @@ const activeConnections = new Map();
 const retryCounts = new Map();
 const retryTimeouts = new Map();
 
-console.log('🤖 Hiyoko Intelligence: 監視Botエンジン起動 (v2最新仕様・自己修復搭載)');
+// 💡 TikTokがダイヤ数を隠してきた時のための「強制価格辞書」
+const GIFT_PRICES = {
+  'Rose': 1, 'TikTok': 1, 'GG': 1, 'Heart Me': 1, 'Mini Speaker': 1, 'Tennis': 1,
+  'Popular Vote': 1, 'ぴょこギフ': 1, 'ぼくリス大筆': 1, 'Coffee': 1, 'Ice Cream': 1,
+  'Finger Heart': 5, 'Mic': 5, 'Panda': 5,
+  'Doughnut': 30, 'Perfume': 20,
+  'Hat and Mustache': 99, 'Cap': 99, 'Paper Crane': 99,
+  'Money Gun': 500, 'Corgi': 299,
+  'Confetti': 100, 'Hand Hearts': 100,
+  'Garland': 1500, 'Carousel': 1500,
+  'Ferris Wheel': 3000, 'Whale Diving': 3000,
+  'Lion': 29999, 'TikTok Universe': 34999
+};
+
+console.log('🤖 Hiyoko Intelligence: 監視Botエンジン起動 (Production Ready)');
 
 async function startBot() {
   setInterval(checkTargets, 30000);
@@ -78,10 +91,9 @@ function connectToLive(systemId, username) {
   const currentRetry = retryCounts.get(systemId) || 0;
   console.log(`📡 [${username} (${systemId})] 接続試行中... (リトライ回数: ${currentRetry})`);
   
-  // 💡 正しい最新のクラスで接続パーツを組み立てる
   const connection = new TikTokLiveConnection(username, {
     processInitialData: false,
-    enableExtendedGiftInfo: true,
+    enableExtendedGiftInfo: false,
     clientParams: {
       "app_language": "ja-JP",
       "device_platform": "web"
@@ -104,41 +116,87 @@ function connectToLive(systemId, username) {
       }
     } catch (e) {}
   }).catch(err => {
-    console.error(`❌ [${username}] 接続エラー:`, err.message);
+    console.error(`❌ [${username}] 接続エラー:`, err.message || err);
     handleDisconnect(systemId, username, false);
   });
 
   connection.on('gift', async data => {
-    if (data.giftType === 1 && !data.repeatEnd) return; 
-    const coins = data.diamondCount * (data.repeatCount || 1);
-    if (coins <= 0) return;
-
     try {
-      const { data: viewer } = await supabase
-        .from('viewers')
-        .upsert(
-          { 
-            id: data.userId.toString(),
-            unique_id: data.uniqueId,
-            name: data.nickname,
-            avatar_url: data.profilePictureUrl,
-            updated_at: new Date().toISOString() 
-          }, 
-          { onConflict: 'id' }
-        )
-        .select('id')
-        .single();
+      const giftName = data.giftName || data.gift?.name || data.gift?.describe || '不明なギフト';
+      const repeatCount = data.repeatCount || 1;
+      
+      let diamondCount = data.diamondCount || data.gift?.diamond_count || data.gift?.coin_count || 0;
+      if (diamondCount === 0) {
+        diamondCount = GIFT_PRICES[giftName] || 0;
+      }
+      
+      const coins = diamondCount * repeatCount;
+      const nickname = data.nickname || data.user?.nickname || '名無し';
 
-      await supabase.from('gift_logs').insert({
+      // 連打の途中のデータは弾く
+      if (data.giftType === 1 && !data.repeatEnd) return; 
+
+      console.log(`🎁 [${username}] ギフト捕捉: ${nickname} から ${giftName} x${repeatCount} (単価補完: ${diamondCount} / 計: ${coins})`);
+
+      const rawGiftId = data.giftId || data.gift?.gift_id || data.gift?.id || 'unknown_gift';
+      const uniqueId = data.uniqueId || data.user?.uniqueId || 'unknown';
+      const profilePic = data.profilePictureUrl || data.user?.profilePictureUrl || null;
+
+      let viewerId;
+      const { data: existingViewers, error: searchError } = await supabase
+        .from('viewers')
+        .select('id')
+        .eq('unique_id', uniqueId)
+        .limit(1);
+
+      if (searchError) {
+        console.error(`❌ [${username}] Viewer検索エラー:`, searchError.message);
+        return;
+      }
+
+      if (existingViewers && existingViewers.length > 0) {
+        viewerId = existingViewers[0].id;
+        // 既存リスナーのアイコン・名前・最終更新日時を最新化
+        await supabase.from('viewers').update({
+          name: nickname,
+          avatar_url: profilePic,
+          updated_at: new Date().toISOString()
+        }).eq('id', viewerId);
+      } else {
+        const { data: newViewer, error: insertError } = await supabase
+          .from('viewers')
+          .insert({
+            unique_id: uniqueId,
+            name: nickname,
+            avatar_url: profilePic
+          })
+          .select('id')
+          .single();
+
+        if (insertError) {
+          console.error(`❌ [${username}] Viewer新規作成エラー:`, insertError.message);
+          return;
+        }
+        viewerId = newViewer.id;
+      }
+
+      const { error: insertError } = await supabase.from('gift_logs').insert({
         liver_id: systemId,
-        viewer_id: viewer.id,
-        gift_id: data.giftId.toString(),
-        gift_name: data.giftName || 'ギフト',
+        viewer_id: viewerId,
+        gift_id: String(rawGiftId),
+        gift_name: giftName,
         coins: coins,
-        count: data.repeatCount || 1
+        count: repeatCount
       });
+
+      if (insertError) {
+          console.error(`❌ [${username}] Log保存エラー:`, insertError.message);
+      } else {
+          console.log(`✅ [${username}] DB保存完了: ${giftName} (+${coins}ダイヤ)`);
+      }
+
     } catch (e) {
-      console.error(`❌ [${username}] DB書込エラー:`, e.message);
+      console.error(`❌ [${username}] DB書込例外:`, e.message);
     }
   });
 
@@ -153,8 +211,7 @@ function connectToLive(systemId, username) {
   });
 
   connection.on('error', err => {
-    console.error(`🚨 [${username}] 内部エラー:`, err.message);
-    handleDisconnect(systemId, username, false);
+    console.error(`🚨 [${username}] 内部エラー:`, err?.message || err);
   });
 }
 
