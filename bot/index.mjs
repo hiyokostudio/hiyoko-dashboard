@@ -88,13 +88,29 @@ function connectToLive(systemId, username) {
   connection.connect().then(async state => {
     retryCounts.set(systemId, 0); 
     try {
-      const avatarUrl = state.roomInfo?.owner?.avatar_thumb?.url_list?.[0];
-      const liverName = state.roomInfo?.owner?.nickname;
+      // 💡 ライバー本人の情報も、あらゆる階層と命名規則を網羅して限界まで探しに行く
+      const owner = state.roomInfo?.owner || state.roomData?.owner || {};
+      
+      let avatarUrl = owner.avatarThumb?.urlList?.[0] || 
+                      owner.avatar_thumb?.url_list?.[0] || 
+                      owner.avatarMedium?.urlList?.[0] || 
+                      owner.avatarUrl || 
+                      null;
+
+      // URL長すぎエラー防止
+      if (avatarUrl && avatarUrl.length > 250) {
+        avatarUrl = avatarUrl.substring(0, 250);
+      }
+
+      const liverName = owner.nickname || owner.displayId || null;
+
       const updateData = {};
       if (avatarUrl) updateData.avatar_url = avatarUrl;
       if (liverName) updateData.liver_name = liverName;
+
       if (Object.keys(updateData).length > 0) {
-        await supabase.from('target_livers').update(updateData).eq('system_id', systemId);
+        const { error } = await supabase.from('target_livers').update(updateData).eq('system_id', systemId);
+        if (!error) console.log(`✅ [${username}] ライバー情報を最新に更新しました`);
       }
     } catch (e) {}
   }).catch(err => {
