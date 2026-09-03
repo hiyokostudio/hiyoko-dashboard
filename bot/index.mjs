@@ -11,7 +11,6 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-  console.error('Environment variables NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY are not set.');
   process.exit(1);
 }
 
@@ -33,7 +32,18 @@ const GIFT_PRICES = {
   'Lion': 29999, 'TikTok Universe': 34999
 };
 
-console.log('Hiyoko Intelligence: Bot Engine Started');
+// 💡 64ビット精度の崩壊を防ぎ、本物の数字IDを正確に抽出する関数
+const getStrId = (val) => {
+  if (!val) return null;
+  if (typeof val === 'object' && typeof val.toString === 'function') {
+    const str = val.toString();
+    if (str === '[object Object]') return null;
+    return str;
+  }
+  return String(val);
+};
+
+console.log('Hiyoko Intelligence: Bot Engine Started (Production v5)');
 
 async function startBot() {
   setInterval(checkTargets, 30000);
@@ -41,32 +51,17 @@ async function startBot() {
 }
 
 async function checkTargets() {
-  console.log(`Checking targets from DB...`);
-  const { data: targets, error } = await supabase
-    .from('target_livers')
-    .select('system_id, username')
-    .eq('is_active', true);
-    
-  if (error) {
-    console.error('Supabase fetch error:', error.message);
-    return;
-  }
-
-  console.log(`Active targets: ${targets?.length || 0}`);
-  if (!targets || targets.length === 0) return;
+  const { data: targets, error } = await supabase.from('target_livers').select('system_id, username').eq('is_active', true);
+  if (error) return;
 
   const activeSystemIds = new Set(targets.map(t => t.system_id));
 
   for (const [systemId, connection] of activeConnections.entries()) {
     if (!activeSystemIds.has(systemId)) {
-      console.log(`[${systemId}] Removed from targets. Disconnecting.`);
       try { connection.disconnect(); } catch (e) {}
       activeConnections.delete(systemId);
       retryCounts.delete(systemId);
-      if (retryTimeouts.has(systemId)) {
-        clearTimeout(retryTimeouts.get(systemId));
-        retryTimeouts.delete(systemId);
-      }
+      if (retryTimeouts.has(systemId)) clearTimeout(retryTimeouts.get(systemId));
     }
   }
 
@@ -78,29 +73,19 @@ async function checkTargets() {
 }
 
 function getBackoffDelay(retryCount) {
-  const baseDelay = 2000; 
-  const maxDelay = 60000; 
-  const delay = Math.min(baseDelay * Math.pow(2, retryCount), maxDelay) + Math.random() * 1000;
-  return Math.floor(delay);
+  return Math.min(2000 * Math.pow(2, retryCount), 60000) + Math.random() * 1000;
 }
 
 function connectToLive(systemId, username) {
-  const currentRetry = retryCounts.get(systemId) || 0;
-  console.log(`[${username} (${systemId})] Connecting... (Retry: ${currentRetry})`);
-  
   const connection = new TikTokLiveConnection(username, {
     processInitialData: false,
     enableExtendedGiftInfo: false,
-    clientParams: {
-      "app_language": "ja-JP",
-      "device_platform": "web"
-    }
+    clientParams: { "app_language": "ja-JP", "device_platform": "web" }
   });
   
   activeConnections.set(systemId, connection);
 
   connection.connect().then(async state => {
-    console.log(`[${username}] Connected! RoomID: ${state.roomId}`);
     retryCounts.set(systemId, 0); 
     try {
       const avatarUrl = state.roomInfo?.owner?.avatar_thumb?.url_list?.[0];
@@ -113,31 +98,38 @@ function connectToLive(systemId, username) {
       }
     } catch (e) {}
   }).catch(err => {
-    console.error(`[${username}] Connection error:`, err.message || err);
     handleDisconnect(systemId, username, false);
   });
 
   connection.on('gift', async data => {
     try {
+      if (data.giftType === 1 && !data.repeatEnd) return; 
+
       const giftName = data.giftName || data.gift?.name || data.gift?.describe || 'unknown_gift';
       const repeatCount = data.repeatCount || 1;
       
-      let diamondCount = data.diamondCount || data.gift?.diamond_count || data.gift?.coin_count || 0;
-      if (diamondCount === 0) {
-        diamondCount = GIFT_PRICES[giftName] || 0;
-      }
-      
+      let diamondCount = data.diamondCount || data.gift?.diamondCount || data.gift?.diamond_count || data.gift?.coinCount || 0;
+      if (diamondCount === 0) diamondCount = GIFT_PRICES[giftName] || 0;
       const coins = diamondCount * repeatCount;
-      const nickname = data.nickname || data.user?.nickname || 'unknown_user';
 
-      if (data.giftType === 1 && !data.repeatEnd) return; 
+      // 💡 正しいIDを抽出して絶対に他人と混同させない
+      const rawUserId = getStrId(data.userId) || getStrId(data.user?.userId) || getStrId(data.user?.id) || getStrId(data.user?.uid);
+      const uniqueId = data.uniqueId || data.user?.uniqueId || data.user?.displayId || data.user?.display_id || 'unknown';
+      const nickname = data.nickname || data.user?.nickname || 'unknown';
+      
+      const immutableUserId = rawUserId ? String(rawUserId) : `unknown_${uniqueId}_${nickname}_${Date.now()}`; 
+      
+      // 💡 限界まで深い階層から本物のアイコン画像を引っこ抜く
+      let profilePic = data.profilePictureUrl || data.user?.profilePictureUrl || null;
+      if (!profilePic && data.user?.avatarThumb?.urlList?.length > 0) profilePic = data.user.avatarThumb.urlList[0];
+      if (!profilePic && data.user?.avatarMedium?.urlList?.length > 0) profilePic = data.user.avatarMedium.urlList[0];
+      
+      // URL長すぎエラー防止
+      if (profilePic && profilePic.length > 250) {
+          profilePic = profilePic.substring(0, 250);
+      }
 
-      console.log(`[${username}] Gift received: ${nickname} sent ${giftName} x${repeatCount} (Coins: ${coins})`);
-
-      const rawGiftId = data.giftId || data.gift?.gift_id || data.gift?.id || 'unknown_gift';
-      const immutableUserId = String(data.userId || data.user?.userId || `unknown_${Date.now()}`);
-      const uniqueId = data.uniqueId || data.user?.uniqueId || 'unknown';
-      const profilePic = data.profilePictureUrl || data.user?.profilePictureUrl || null;
+      const rawGiftId = getStrId(data.giftId) || getStrId(data.gift?.id) || getStrId(data.gift?.gift_id) || 'unknown_gift';
 
       let viewerId;
       const { data: existingViewers, error: searchError } = await supabase
@@ -146,10 +138,7 @@ function connectToLive(systemId, username) {
         .eq('tiktok_id', immutableUserId)
         .limit(1);
 
-      if (searchError) {
-        console.error(`[${username}] Viewer search error:`, searchError.message);
-        return;
-      }
+      if (searchError) return;
 
       if (existingViewers && existingViewers.length > 0) {
         viewerId = existingViewers[0].id;
@@ -171,14 +160,11 @@ function connectToLive(systemId, username) {
           .select('id')
           .single();
 
-        if (insertError) {
-          console.error(`[${username}] Viewer insert error:`, insertError.message);
-          return;
-        }
+        if (insertError) return;
         viewerId = newViewer.id;
       }
 
-      const { error: insertError } = await supabase.from('gift_logs').insert({
+      await supabase.from('gift_logs').insert({
         liver_id: systemId,
         viewer_id: viewerId,
         gift_id: String(rawGiftId),
@@ -187,30 +173,18 @@ function connectToLive(systemId, username) {
         count: repeatCount
       });
 
-      if (insertError) {
-          console.error(`[${username}] Log insert error:`, insertError.message);
-      } else {
-          console.log(`[${username}] DB saved: ${giftName} (+${coins})`);
-      }
-
-    } catch (e) {
-      console.error(`[${username}] DB write exception:`, e.message);
-    }
+    } catch (e) {}
   });
 
   connection.on('streamEnd', () => {
-    console.log(`[${username}] Stream ended`);
     handleDisconnect(systemId, username, true);
   });
 
   connection.on('disconnected', () => {
-    console.warn(`[${username}] Disconnected`);
     handleDisconnect(systemId, username, false);
   });
 
-  connection.on('error', err => {
-    console.error(`[${username}] Internal error:`, err?.message || err);
-  });
+  connection.on('error', err => {});
 }
 
 function handleDisconnect(systemId, username, isStreamEnd) {
@@ -228,8 +202,6 @@ function handleDisconnect(systemId, username, isStreamEnd) {
   const delay = getBackoffDelay(currentRetry);
   retryCounts.set(systemId, currentRetry + 1);
 
-  console.log(`[${username}] Reconnecting in ${Math.round(delay / 1000)}s...`);
-
   if (retryTimeouts.has(systemId)) {
     clearTimeout(retryTimeouts.get(systemId));
   }
@@ -238,11 +210,7 @@ function handleDisconnect(systemId, username, isStreamEnd) {
     retryTimeouts.delete(systemId);
     supabase.from('target_livers').select('is_active').eq('system_id', systemId).single()
       .then(({ data }) => {
-        if (data && data.is_active) {
-          connectToLive(systemId, username);
-        } else {
-          console.log(`[${username}] Reconnection cancelled`);
-        }
+        if (data && data.is_active) connectToLive(systemId, username);
       }).catch(() => {
         connectToLive(systemId, username);
       });
