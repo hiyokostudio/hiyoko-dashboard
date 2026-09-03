@@ -11,6 +11,7 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
+  console.error('❌ 致命的エラー: Supabaseの環境変数が設定されていません。');
   process.exit(1);
 }
 
@@ -42,7 +43,7 @@ const getStrId = (val) => {
   return String(val);
 };
 
-console.log('Hiyoko Intelligence: Bot Engine Started (Production v6)');
+console.log('🤖 Hiyoko Intelligence: 監視Botエンジン起動 (v7 究極完全版・日本語対応)');
 
 async function startBot() {
   setInterval(checkTargets, 30000);
@@ -50,13 +51,14 @@ async function startBot() {
 }
 
 async function checkTargets() {
-  const { data: targets, error } = await supabase.from('target_livers').select('system_id, username').eq('is_active', true);
+  const { data: targets, error } = await supabase.from('target_livers').select('system_id, username, liver_name, avatar_url').eq('is_active', true);
   if (error) return;
 
   const activeSystemIds = new Set(targets.map(t => t.system_id));
 
   for (const [systemId, connection] of activeConnections.entries()) {
     if (!activeSystemIds.has(systemId)) {
+      console.log(`⏹️ [${systemId}] 監視対象から外れました。通信を切断します。`);
       try { connection.disconnect(); } catch (e) {}
       activeConnections.delete(systemId);
       retryCounts.delete(systemId);
@@ -66,7 +68,7 @@ async function checkTargets() {
 
   for (const target of targets) {
     if (!activeConnections.has(target.system_id) && !retryTimeouts.has(target.system_id)) {
-      connectToLive(target.system_id, target.username);
+      connectToLive(target.system_id, target.username, target.liver_name, target.avatar_url);
     }
   }
 }
@@ -75,7 +77,58 @@ function getBackoffDelay(retryCount) {
   return Math.min(2000 * Math.pow(2, retryCount), 60000) + Math.random() * 1000;
 }
 
-function connectToLive(systemId, username) {
+// 💡 妥協なきハイクオリティなプロフィール取得（WAF完全回避・REHYDRATIONデータ抽出）
+async function fetchLiverProfile(username) {
+  try {
+    const headers = {
+      'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+      'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7'
+    };
+
+    let response = await fetch(`https://www.tiktok.com/@${username}?lang=ja-JP`, { headers });
+    if (!response.ok) {
+      response = await fetch(`https://m.tiktok.com/node/share/user/@${username}`, { headers });
+    }
+    
+    if (!response.ok) return null;
+    
+    const html = await response.text();
+    const scriptRegex = /<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__" type="application\/json">([^<]+)<\/script>/;
+    const match = html.match(scriptRegex);
+
+    if (match && match[1]) {
+      const data = JSON.parse(match[1]);
+      const userInfo = data?.__DEFAULT_SCOPE__?.['webapp.user-detail']?.userInfo?.user;
+      if (userInfo) {
+        return {
+          nickname: userInfo.nickname,
+          avatarUrl: userInfo.avatarLarger || userInfo.avatarMedium || userInfo.avatarThumb
+        };
+      }
+    }
+    
+    try {
+      const json = JSON.parse(html);
+      const userInfo = json?.userInfo?.user;
+      if (userInfo) {
+        return {
+          nickname: userInfo.nickname,
+          avatarUrl: userInfo.avatarLarger || userInfo.avatarMedium || userInfo.avatarThumb
+        };
+      }
+    } catch (e) {}
+
+  } catch (err) {
+    return null;
+  }
+  return null;
+}
+
+function connectToLive(systemId, username, currentLiverName, currentAvatarUrl) {
+  const currentRetry = retryCounts.get(systemId) || 0;
+  console.log(`📡 [${username}] 接続を試行中... (リトライ回数: ${currentRetry})`);
+  
   const connection = new TikTokLiveConnection(username, {
     processInitialData: false,
     enableExtendedGiftInfo: false,
@@ -85,41 +138,43 @@ function connectToLive(systemId, username) {
   activeConnections.set(systemId, connection);
 
   connection.connect().then(async state => {
+    console.log(`✅ [${username}] ライブ接続成功！ (RoomID: ${state.roomId})`);
     retryCounts.set(systemId, 0); 
     try {
-      let avatarUrl = null;
-      let liverName = null;
+      let newAvatarUrl = null;
+      let newLiverName = null;
 
       const owner = state?.roomInfo?.owner || state?.roomData?.owner || state?.upInfo || {};
-      avatarUrl = owner.avatarThumb?.urlList?.[0] || owner.avatar_thumb?.url_list?.[0] || owner.avatarUrl || null;
-      liverName = owner.nickname || owner.displayId || null;
+      newAvatarUrl = owner.avatarThumb?.urlList?.[0] || owner.avatar_thumb?.url_list?.[0] || owner.avatarUrl || null;
+      newLiverName = owner.nickname || owner.displayId || null;
 
-      if (!avatarUrl || !liverName) {
-        try {
-          const res = await fetch(`https://www.tiktok.com/@${username}`, {
-            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-          });
-          const html = await res.text();
-          
-          if (!avatarUrl) {
-            const avatarMatch = html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i);
-            if (avatarMatch) avatarUrl = avatarMatch[1].replace(/\\u002F/g, '/');
-          }
-          if (!liverName) {
-            const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
-            if (titleMatch) liverName = titleMatch[1].split('(')[0].replace('| TikTok', '').trim();
-          }
-        } catch (err) {}
+      // 💡 TikTokからデータが取れなかった場合、iPhone偽装でプロフィールから強制抽出
+      if (!newAvatarUrl || !newLiverName) {
+        const profile = await fetchLiverProfile(username);
+        if (profile) {
+          if (!newAvatarUrl && profile.avatarUrl) newAvatarUrl = profile.avatarUrl;
+          if (!newLiverName && profile.nickname) newLiverName = profile.nickname;
+        }
       }
 
-      if (avatarUrl && avatarUrl.length > 250) avatarUrl = avatarUrl.substring(0, 250);
-
       const updateData = {};
-      if (avatarUrl) updateData.avatar_url = avatarUrl;
-      if (liverName) updateData.liver_name = liverName;
+      
+      // 🚨 「TikTok - Make Your Day」や無効な画像を完全に弾く最強の防壁
+      if (newAvatarUrl && newAvatarUrl.length <= 250 && newAvatarUrl !== currentAvatarUrl) {
+        if (!newAvatarUrl.includes('tiktok_logo')) {
+          updateData.avatar_url = newAvatarUrl;
+        }
+      }
+      
+      if (newLiverName && newLiverName !== currentLiverName) {
+        if (!newLiverName.toLowerCase().includes('tiktok - make your day') && !newLiverName.toLowerCase().includes('tiktok')) {
+          updateData.liver_name = newLiverName;
+        }
+      }
 
       if (Object.keys(updateData).length > 0) {
         await supabase.from('target_livers').update(updateData).eq('system_id', systemId);
+        console.log(`🔄 [${username}] プロフィール情報（名前 / アイコン）を最新版に自動修復しました`);
       }
     } catch (e) {}
   }).catch(err => {
@@ -130,7 +185,7 @@ function connectToLive(systemId, username) {
     try {
       if (data.giftType === 1 && !data.repeatEnd) return; 
 
-      const giftName = data.giftName || data.gift?.name || data.gift?.describe || 'unknown_gift';
+      const giftName = data.giftName || data.gift?.name || data.gift?.describe || '不明なギフト';
       const repeatCount = data.repeatCount || 1;
       
       let diamondCount = data.diamondCount || data.gift?.diamondCount || data.gift?.diamond_count || data.gift?.coinCount || 0;
@@ -139,7 +194,7 @@ function connectToLive(systemId, username) {
 
       const rawUserId = getStrId(data.userId) || getStrId(data.user?.userId) || getStrId(data.user?.id) || getStrId(data.user?.uid);
       const uniqueId = data.uniqueId || data.user?.uniqueId || data.user?.displayId || data.user?.display_id || 'unknown';
-      const nickname = data.nickname || data.user?.nickname || 'unknown';
+      const nickname = data.nickname || data.user?.nickname || '名無し';
       
       const immutableUserId = rawUserId ? String(rawUserId) : `unknown_${uniqueId}_${nickname}_${Date.now()}`; 
       
@@ -165,12 +220,23 @@ function connectToLive(systemId, username) {
         viewerId = newViewer.id;
       }
 
-      await supabase.from('gift_logs').insert({ liver_id: systemId, viewer_id: viewerId, gift_id: String(rawGiftId), gift_name: giftName, coins: coins, count: repeatCount });
+      const { error: insertError } = await supabase.from('gift_logs').insert({ liver_id: systemId, viewer_id: viewerId, gift_id: String(rawGiftId), gift_name: giftName, coins: coins, count: repeatCount });
+      
+      if (!insertError && coins > 0) {
+        console.log(`🎁 [${username}] ギフト記録完了: ${nickname} から ${giftName} x${repeatCount} (+${coins}ダイヤ)`);
+      }
     } catch (e) {}
   });
 
-  connection.on('streamEnd', () => handleDisconnect(systemId, username, true));
-  connection.on('disconnected', () => handleDisconnect(systemId, username, false));
+  connection.on('streamEnd', () => {
+    console.log(`🔴 [${username}] ライブ配信が終了しました`);
+    handleDisconnect(systemId, username, true);
+  });
+
+  connection.on('disconnected', () => {
+    handleDisconnect(systemId, username, false);
+  });
+
   connection.on('error', err => {});
 }
 
@@ -194,7 +260,10 @@ function handleDisconnect(systemId, username, isStreamEnd) {
   const timeoutId = setTimeout(() => {
     retryTimeouts.delete(systemId);
     supabase.from('target_livers').select('is_active').eq('system_id', systemId).single()
-      .then(({ data }) => { if (data && data.is_active) connectToLive(systemId, username); })
+      .then(({ data }) => { 
+        if (data && data.is_active) connectToLive(systemId, username); 
+        else console.log(`⏹️ [${username}] 監視対象から外れたため再接続をキャンセルしました`);
+      })
       .catch(() => connectToLive(systemId, username));
   }, delay);
 
