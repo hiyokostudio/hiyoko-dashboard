@@ -21,7 +21,8 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const [vipListeners, setVipListeners] = useState<VipListener[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [activePeriod, setActivePeriod] = useState<'today' | 'month' | 'total' | 'custom'>('today');
+  // 💡 'yesterday' を追加
+  const [activePeriod, setActivePeriod] = useState<'today' | 'yesterday' | 'month' | 'total' | 'custom'>('today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [activeView, setActiveView] = useState<'vips' | 'logs'>('vips'); 
@@ -53,11 +54,34 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     return <img src={src} onError={() => setImgError(true)} className={`${size} rounded-full border border-slate-700 object-cover flex-shrink-0 ${extraClass}`} alt=""/>;
   };
 
+  // 💡 JST時差バグを完全に修正した期間判定ロジック
   const getTimeBounds = () => {
-    let startIso = null; let endIso = null; const now = new Date();
-    if (activePeriod === 'custom' && startDate && endDate) { startIso = new Date(startDate).toISOString(); endIso = new Date(endDate).toISOString(); }
-    else if (activePeriod === 'today') { const today = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })); today.setHours(0, 0, 0, 0); startIso = new Date(today.getTime() - 9 * 60 * 60 * 1000).toISOString(); }
-    else if (activePeriod === 'month') { const month = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })); month.setDate(1); month.setHours(0, 0, 0, 0); startIso = new Date(month.getTime() - 9 * 60 * 60 * 1000).toISOString(); }
+    let startIso = null; let endIso = null;
+    if (activePeriod === 'custom' && startDate && endDate) { 
+      startIso = new Date(startDate).toISOString(); 
+      endIso = new Date(endDate).toISOString(); 
+    } else if (activePeriod !== 'total') {
+      const jstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
+      
+      if (activePeriod === 'today') {
+        const yyyy = jstNow.getFullYear();
+        const mm = String(jstNow.getMonth() + 1).padStart(2, '0');
+        const dd = String(jstNow.getDate()).padStart(2, '0');
+        startIso = new Date(`${yyyy}-${mm}-${dd}T00:00:00+09:00`).toISOString();
+      } else if (activePeriod === 'yesterday') {
+        const jstYesterday = new Date(jstNow);
+        jstYesterday.setDate(jstYesterday.getDate() - 1);
+        const yyyy = jstYesterday.getFullYear();
+        const mm = String(jstYesterday.getMonth() + 1).padStart(2, '0');
+        const dd = String(jstYesterday.getDate()).padStart(2, '0');
+        startIso = new Date(`${yyyy}-${mm}-${dd}T00:00:00+09:00`).toISOString();
+        endIso = new Date(`${yyyy}-${mm}-${dd}T23:59:59.999+09:00`).toISOString();
+      } else if (activePeriod === 'month') {
+        const yyyy = jstNow.getFullYear();
+        const mm = String(jstNow.getMonth() + 1).padStart(2, '0');
+        startIso = new Date(`${yyyy}-${mm}-01T00:00:00+09:00`).toISOString();
+      }
+    }
     return { startIso, endIso };
   };
 
@@ -248,6 +272,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         <div className="px-6 relative z-10 mb-4">
           <div className="flex space-x-1 bg-slate-900/80 p-1 rounded-xl border border-slate-800/80 backdrop-blur-sm">
             <button onClick={() => setActivePeriod('today')} className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-all ${activePeriod === 'today' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>本日</button>
+            <button onClick={() => setActivePeriod('yesterday')} className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-all ${activePeriod === 'yesterday' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>昨日</button>
             <button onClick={() => setActivePeriod('month')} className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-all ${activePeriod === 'month' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>今月</button>
             <button onClick={() => setActivePeriod('total')} className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-all ${activePeriod === 'total' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>累計</button>
             <button onClick={() => setActivePeriod('custom')} className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-all ${activePeriod === 'custom' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>指定</button>
@@ -264,7 +289,9 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         <div className="px-6 relative z-10 flex flex-col gap-3">
           <div className="bg-gradient-to-br from-slate-900/80 to-black border border-slate-800/80 p-5 rounded-3xl shadow-2xl backdrop-blur-md relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10"><Zap size={100} className="text-indigo-400"/></div>
-            <p className="text-[11px] font-black text-slate-400 tracking-widest uppercase mb-1 flex items-center"><TrendingUp size={12} className="mr-1.5 text-indigo-400"/> 推定報酬 ({activePeriod})</p>
+            <p className="text-[11px] font-black text-slate-400 tracking-widest uppercase mb-1 flex items-center">
+              <TrendingUp size={12} className="mr-1.5 text-indigo-400"/> 推定報酬 ({activePeriod === 'today' ? '本日' : activePeriod === 'yesterday' ? '昨日' : activePeriod === 'month' ? '今月' : activePeriod === 'total' ? '累計' : '指定'})
+            </p>
             <div className="flex items-baseline gap-1 mt-1"><span className="text-2xl font-black text-indigo-400">¥</span><span className="text-5xl font-black text-white tracking-tighter tabular-nums drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]">{currentRewardJPY.toLocaleString()}</span></div>
             <div className="mt-4 flex items-center gap-4 border-t border-slate-800/80 pt-3">
               <div className="flex-1"><p className="text-[10px] font-bold text-slate-500 uppercase">獲得ダイヤ</p><p className="text-lg font-black text-slate-200 tabular-nums flex items-center gap-1.5 mt-0.5"><Coins size={12} className="text-amber-400"/> {totalCoins.toLocaleString()}</p></div>

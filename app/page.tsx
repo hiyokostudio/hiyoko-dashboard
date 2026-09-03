@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2, Search } from 'lucide-react';
+import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2, Search, History } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 type LiverStat = { system_id: string; username: string; liver_name?: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; pin_code: string; };
@@ -14,7 +14,7 @@ type ListenerProfile = { first_seen: string; last_seen: string; total_coins: num
 export default function Dashboard() {
   const [stats, setStats] = useState<LiverStat[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'today' | 'month' | 'total' | 'custom'>('total');
+  const [activeTab, setActiveTab] = useState<'today' | 'yesterday' | 'month' | 'total' | 'custom'>('today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   
@@ -100,23 +100,26 @@ export default function Dashboard() {
     if (activeTab === 'custom' && startDate && endDate) { 
       startIso = new Date(startDate).toISOString(); 
       endIso = new Date(endDate).toISOString(); 
-    } else if (activeTab === 'today' || activeTab === 'month') {
-      // 日本時間（JST）ベースでの日付文字列（YYYY-MM-DD）を正確に取得する
-      const formatter = new Intl.DateTimeFormat('en-CA', {
-        timeZone: 'Asia/Tokyo',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit'
-      });
-      const jstDateStr = formatter.format(new Date()); // 例: "2026-09-03"
+    } else if (activeTab !== 'total') {
+      const jstNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }));
       
       if (activeTab === 'today') {
-        // JSTの今日の00:00:00をUTCに換算する（JSTはUTC+9なので、-9時間する）
-        startIso = new Date(`${jstDateStr}T00:00:00+09:00`).toISOString();
+        const yyyy = jstNow.getFullYear();
+        const mm = String(jstNow.getMonth() + 1).padStart(2, '0');
+        const dd = String(jstNow.getDate()).padStart(2, '0');
+        startIso = new Date(`${yyyy}-${mm}-${dd}T00:00:00+09:00`).toISOString();
+      } else if (activeTab === 'yesterday') {
+        const jstYesterday = new Date(jstNow);
+        jstYesterday.setDate(jstYesterday.getDate() - 1);
+        const yyyy = jstYesterday.getFullYear();
+        const mm = String(jstYesterday.getMonth() + 1).padStart(2, '0');
+        const dd = String(jstYesterday.getDate()).padStart(2, '0');
+        startIso = new Date(`${yyyy}-${mm}-${dd}T00:00:00+09:00`).toISOString();
+        endIso = new Date(`${yyyy}-${mm}-${dd}T23:59:59.999+09:00`).toISOString();
       } else if (activeTab === 'month') {
-        // JSTの今月1日の00:00:00をUTCに換算する
-        const [year, month] = jstDateStr.split('-');
-        startIso = new Date(`${year}-${month}-01T00:00:00+09:00`).toISOString();
+        const yyyy = jstNow.getFullYear();
+        const mm = String(jstNow.getMonth() + 1).padStart(2, '0');
+        startIso = new Date(`${yyyy}-${mm}-01T00:00:00+09:00`).toISOString();
       }
     }
     return { startIso, endIso };
@@ -315,6 +318,7 @@ export default function Dashboard() {
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
             <div className="flex space-x-1 bg-slate-900/80 p-1 rounded-xl shadow-inner border border-slate-800 backdrop-blur-sm">
               <button onClick={() => setActiveTab('today')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'today' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><Clock size={14} className="mr-1.5" /> 本日</button>
+              <button onClick={() => setActiveTab('yesterday')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'yesterday' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><History size={14} className="mr-1.5" /> 昨日</button>
               <button onClick={() => setActiveTab('month')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'month' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><Calendar size={14} className="mr-1.5" /> 今月</button>
               <button onClick={() => setActiveTab('total')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'total' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><Globe size={14} className="mr-1.5" /> 全期間</button>
               <button onClick={() => setActiveTab('custom')} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-all ${activeTab === 'custom' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800'}`}><CalendarSearch size={14} className="mr-1.5" /> 期間指定</button>
@@ -337,7 +341,7 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           <div className="md:col-span-2 bg-slate-900/60 border border-slate-800/80 p-6 rounded-3xl shadow-lg relative overflow-hidden backdrop-blur-sm">
             <div className="absolute top-0 right-0 p-6 opacity-10"><Coins size={100} /></div>
-            <p className="text-xs font-bold text-indigo-400 mb-2 tracking-wider">システム総獲得ダイヤ <span className="font-normal text-slate-400">({activeTab === 'today' ? '本日' : activeTab === 'month' ? '今月' : activeTab === 'total' ? '累計' : '指定期間'})</span></p>
+            <p className="text-xs font-bold text-indigo-400 mb-2 tracking-wider">システム総獲得ダイヤ <span className="font-normal text-slate-400">({activeTab === 'today' ? '本日' : activeTab === 'yesterday' ? '昨日' : activeTab === 'month' ? '今月' : activeTab === 'total' ? '累計' : '指定期間'})</span></p>
             <h2 className="text-5xl font-black text-white mb-6 tracking-tight">{systemTotalCoins.toLocaleString()}</h2>
             <div className="flex gap-12">
               <div><p className="text-xs font-bold text-slate-500 mb-1">所属ライバー</p><p className="text-2xl font-bold text-white">{stats.length} <span className="text-sm text-slate-500 font-normal">名</span></p></div>

@@ -32,7 +32,6 @@ const GIFT_PRICES = {
   'Lion': 29999, 'TikTok Universe': 34999
 };
 
-// 💡 64ビット精度の崩壊を防ぎ、本物の数字IDを正確に抽出する関数
 const getStrId = (val) => {
   if (!val) return null;
   if (typeof val === 'object' && typeof val.toString === 'function') {
@@ -43,7 +42,7 @@ const getStrId = (val) => {
   return String(val);
 };
 
-console.log('Hiyoko Intelligence: Bot Engine Started (Production v5)');
+console.log('Hiyoko Intelligence: Bot Engine Started (Production v6)');
 
 async function startBot() {
   setInterval(checkTargets, 30000);
@@ -88,29 +87,39 @@ function connectToLive(systemId, username) {
   connection.connect().then(async state => {
     retryCounts.set(systemId, 0); 
     try {
-      // 💡 ライバー本人の情報も、あらゆる階層と命名規則を網羅して限界まで探しに行く
-      const owner = state.roomInfo?.owner || state.roomData?.owner || {};
-      
-      let avatarUrl = owner.avatarThumb?.urlList?.[0] || 
-                      owner.avatar_thumb?.url_list?.[0] || 
-                      owner.avatarMedium?.urlList?.[0] || 
-                      owner.avatarUrl || 
-                      null;
+      let avatarUrl = null;
+      let liverName = null;
 
-      // URL長すぎエラー防止
-      if (avatarUrl && avatarUrl.length > 250) {
-        avatarUrl = avatarUrl.substring(0, 250);
+      const owner = state?.roomInfo?.owner || state?.roomData?.owner || state?.upInfo || {};
+      avatarUrl = owner.avatarThumb?.urlList?.[0] || owner.avatar_thumb?.url_list?.[0] || owner.avatarUrl || null;
+      liverName = owner.nickname || owner.displayId || null;
+
+      if (!avatarUrl || !liverName) {
+        try {
+          const res = await fetch(`https://www.tiktok.com/@${username}`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+          });
+          const html = await res.text();
+          
+          if (!avatarUrl) {
+            const avatarMatch = html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i);
+            if (avatarMatch) avatarUrl = avatarMatch[1].replace(/\\u002F/g, '/');
+          }
+          if (!liverName) {
+            const titleMatch = html.match(/<title>([^<]+)<\/title>/i);
+            if (titleMatch) liverName = titleMatch[1].split('(')[0].replace('| TikTok', '').trim();
+          }
+        } catch (err) {}
       }
 
-      const liverName = owner.nickname || owner.displayId || null;
+      if (avatarUrl && avatarUrl.length > 250) avatarUrl = avatarUrl.substring(0, 250);
 
       const updateData = {};
       if (avatarUrl) updateData.avatar_url = avatarUrl;
       if (liverName) updateData.liver_name = liverName;
 
       if (Object.keys(updateData).length > 0) {
-        const { error } = await supabase.from('target_livers').update(updateData).eq('system_id', systemId);
-        if (!error) console.log(`✅ [${username}] ライバー情報を最新に更新しました`);
+        await supabase.from('target_livers').update(updateData).eq('system_id', systemId);
       }
     } catch (e) {}
   }).catch(err => {
@@ -128,78 +137,40 @@ function connectToLive(systemId, username) {
       if (diamondCount === 0) diamondCount = GIFT_PRICES[giftName] || 0;
       const coins = diamondCount * repeatCount;
 
-      // 💡 正しいIDを抽出して絶対に他人と混同させない
       const rawUserId = getStrId(data.userId) || getStrId(data.user?.userId) || getStrId(data.user?.id) || getStrId(data.user?.uid);
       const uniqueId = data.uniqueId || data.user?.uniqueId || data.user?.displayId || data.user?.display_id || 'unknown';
       const nickname = data.nickname || data.user?.nickname || 'unknown';
       
       const immutableUserId = rawUserId ? String(rawUserId) : `unknown_${uniqueId}_${nickname}_${Date.now()}`; 
       
-      // 💡 限界まで深い階層から本物のアイコン画像を引っこ抜く
       let profilePic = data.profilePictureUrl || data.user?.profilePictureUrl || null;
       if (!profilePic && data.user?.avatarThumb?.urlList?.length > 0) profilePic = data.user.avatarThumb.urlList[0];
       if (!profilePic && data.user?.avatarMedium?.urlList?.length > 0) profilePic = data.user.avatarMedium.urlList[0];
       
-      // URL長すぎエラー防止
-      if (profilePic && profilePic.length > 250) {
-          profilePic = profilePic.substring(0, 250);
-      }
+      if (profilePic && profilePic.length > 250) profilePic = profilePic.substring(0, 250);
 
       const rawGiftId = getStrId(data.giftId) || getStrId(data.gift?.id) || getStrId(data.gift?.gift_id) || 'unknown_gift';
 
       let viewerId;
-      const { data: existingViewers, error: searchError } = await supabase
-        .from('viewers')
-        .select('id')
-        .eq('tiktok_id', immutableUserId)
-        .limit(1);
+      const { data: existingViewers, error: searchError } = await supabase.from('viewers').select('id').eq('tiktok_id', immutableUserId).limit(1);
 
       if (searchError) return;
 
       if (existingViewers && existingViewers.length > 0) {
         viewerId = existingViewers[0].id;
-        await supabase.from('viewers').update({
-          unique_id: uniqueId,
-          name: nickname,
-          avatar_url: profilePic,
-          updated_at: new Date().toISOString()
-        }).eq('id', viewerId);
+        await supabase.from('viewers').update({ unique_id: uniqueId, name: nickname, avatar_url: profilePic, updated_at: new Date().toISOString() }).eq('id', viewerId);
       } else {
-        const { data: newViewer, error: insertError } = await supabase
-          .from('viewers')
-          .insert({
-            tiktok_id: immutableUserId,
-            unique_id: uniqueId,
-            name: nickname,
-            avatar_url: profilePic
-          })
-          .select('id')
-          .single();
-
+        const { data: newViewer, error: insertError } = await supabase.from('viewers').insert({ tiktok_id: immutableUserId, unique_id: uniqueId, name: nickname, avatar_url: profilePic }).select('id').single();
         if (insertError) return;
         viewerId = newViewer.id;
       }
 
-      await supabase.from('gift_logs').insert({
-        liver_id: systemId,
-        viewer_id: viewerId,
-        gift_id: String(rawGiftId),
-        gift_name: giftName,
-        coins: coins,
-        count: repeatCount
-      });
-
+      await supabase.from('gift_logs').insert({ liver_id: systemId, viewer_id: viewerId, gift_id: String(rawGiftId), gift_name: giftName, coins: coins, count: repeatCount });
     } catch (e) {}
   });
 
-  connection.on('streamEnd', () => {
-    handleDisconnect(systemId, username, true);
-  });
-
-  connection.on('disconnected', () => {
-    handleDisconnect(systemId, username, false);
-  });
-
+  connection.on('streamEnd', () => handleDisconnect(systemId, username, true));
+  connection.on('disconnected', () => handleDisconnect(systemId, username, false));
   connection.on('error', err => {});
 }
 
@@ -218,18 +189,13 @@ function handleDisconnect(systemId, username, isStreamEnd) {
   const delay = getBackoffDelay(currentRetry);
   retryCounts.set(systemId, currentRetry + 1);
 
-  if (retryTimeouts.has(systemId)) {
-    clearTimeout(retryTimeouts.get(systemId));
-  }
+  if (retryTimeouts.has(systemId)) clearTimeout(retryTimeouts.get(systemId));
 
   const timeoutId = setTimeout(() => {
     retryTimeouts.delete(systemId);
     supabase.from('target_livers').select('is_active').eq('system_id', systemId).single()
-      .then(({ data }) => {
-        if (data && data.is_active) connectToLive(systemId, username);
-      }).catch(() => {
-        connectToLive(systemId, username);
-      });
+      .then(({ data }) => { if (data && data.is_active) connectToLive(systemId, username); })
+      .catch(() => connectToLive(systemId, username));
   }, delay);
 
   retryTimeouts.set(systemId, timeoutId);
