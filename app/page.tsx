@@ -96,10 +96,29 @@ export default function Dashboard() {
   }, [healthFilter]);
 
   const getTimeBounds = () => {
-    let startIso = null; let endIso = null; const now = new Date();
-    if (activeTab === 'custom' && startDate && endDate) { startIso = new Date(startDate).toISOString(); endIso = new Date(endDate).toISOString(); }
-    else if (activeTab === 'today') { const today = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })); today.setHours(0, 0, 0, 0); startIso = new Date(today.getTime() - 9 * 60 * 60 * 1000).toISOString(); }
-    else if (activeTab === 'month') { const month = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' })); month.setDate(1); month.setHours(0, 0, 0, 0); startIso = new Date(month.getTime() - 9 * 60 * 60 * 1000).toISOString(); }
+    let startIso = null; let endIso = null;
+    if (activeTab === 'custom' && startDate && endDate) { 
+      startIso = new Date(startDate).toISOString(); 
+      endIso = new Date(endDate).toISOString(); 
+    } else if (activeTab === 'today' || activeTab === 'month') {
+      // 日本時間（JST）ベースでの日付文字列（YYYY-MM-DD）を正確に取得する
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      const jstDateStr = formatter.format(new Date()); // 例: "2026-09-03"
+      
+      if (activeTab === 'today') {
+        // JSTの今日の00:00:00をUTCに換算する（JSTはUTC+9なので、-9時間する）
+        startIso = new Date(`${jstDateStr}T00:00:00+09:00`).toISOString();
+      } else if (activeTab === 'month') {
+        // JSTの今月1日の00:00:00をUTCに換算する
+        const [year, month] = jstDateStr.split('-');
+        startIso = new Date(`${year}-${month}-01T00:00:00+09:00`).toISOString();
+      }
+    }
     return { startIso, endIso };
   };
 
