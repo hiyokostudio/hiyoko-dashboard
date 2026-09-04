@@ -26,7 +26,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const [endDate, setEndDate] = useState('');
   const [activeView, setActiveView] = useState<'vips' | 'logs'>('vips'); 
 
-  // リスナーモーダル用ステート（即時展開のための最適化）
   const [selectedViewer, setSelectedViewer] = useState<{id: string, name: string} | null>(null);
   const [viewerProfile, setViewerProfile] = useState<ListenerProfile | null>(null);
   const [viewerLogs, setViewerLogs] = useState<GiftLog[]>([]);
@@ -117,8 +116,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   useEffect(() => {
     if (selectedViewer && system_id) {
       setActiveModalTab('analytics');
-      setViewerProfile(null);
-      setViewerLogs([]);
       fetchViewerProfile(system_id, selectedViewer.id);
       fetchViewerLogs(system_id, selectedViewer.id);
     } else {
@@ -151,19 +148,29 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
 
   const fetchViewerProfile = async (liverId: string, viewerId: string) => {
     setLoadingViewerProfile(true);
-    const { data } = await supabase.rpc('get_listener_profile', { p_liver_id: liverId, p_viewer_id: viewerId });
-    if (data) setViewerProfile(data as ListenerProfile);
-    setLoadingViewerProfile(false);
+    try {
+      const { data } = await supabase.rpc('get_listener_profile', { p_liver_id: liverId, p_viewer_id: viewerId });
+      setViewerProfile(data as ListenerProfile || null);
+    } catch (e) {
+      setViewerProfile(null);
+    } finally {
+      setLoadingViewerProfile(false);
+    }
   };
 
   const fetchViewerLogs = async (liverId: string, viewerId: string) => {
     setLoadingViewerLogs(true);
-    const { startIso, endIso } = getTimeBounds();
-    let query = supabase.from('gift_logs').select('id, created_at, coins, count, gift_name').eq('liver_id', liverId).eq('viewer_id', viewerId).order('created_at', { ascending: false }).limit(200);
-    if (startIso) query = query.gte('created_at', startIso); if (endIso) query = query.lte('created_at', endIso);
-    const { data } = await query;
-    if (data) setViewerLogs(data as any);
-    setLoadingViewerLogs(false);
+    try {
+      const { startIso, endIso } = getTimeBounds();
+      let query = supabase.from('gift_logs').select('id, created_at, coins, count, gift_name').eq('liver_id', liverId).eq('viewer_id', viewerId).order('created_at', { ascending: false }).limit(200);
+      if (startIso) query = query.gte('created_at', startIso); if (endIso) query = query.lte('created_at', endIso);
+      const { data } = await query;
+      setViewerLogs(data as any || []);
+    } catch (e) {
+      setViewerLogs([]);
+    } finally {
+      setLoadingViewerLogs(false);
+    }
   };
 
   const handleRateUpdate = async () => {
@@ -174,7 +181,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     else { alert('更新に失敗しました'); }
   };
 
-  // 💡 グラフ用のデータを変数として事前計算（JSXでの文法エラーを完全に防ぐ）
   const dowData = useMemo(() => {
     if (!viewerProfile) return [];
     const daysMap: Record<string, string> = { 'Monday': '月', 'Tuesday': '火', 'Wednesday': '水', 'Thursday': '木', 'Friday': '金', 'Saturday': '土', 'Sunday': '日' };
@@ -321,19 +327,21 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                       {vip.rank === 1 ? <Crown size={16} className="text-amber-400 mx-auto" /> : vip.rank === 2 ? <Award size={16} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={16} className="text-amber-700 mx-auto" /> : <span className="text-xs font-bold text-slate-500">{vip.rank}</span>}
                     </div>
                     
-                    <div className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank'); else alert('ID未取得'); }}><SafeAvatar src={vip.avatar_url} name={vip.viewer_name} size="w-10 h-10" /></div>
+                    <div className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank'); }}>
+                      <SafeAvatar src={vip.avatar_url} name={vip.viewer_name} size="w-10 h-10" />
+                    </div>
 
                     <div className="flex-grow ml-3 min-w-0">
                       <div className="flex flex-col relative z-10">
                         <div className="flex items-center gap-2">
-                          <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank'); else alert('ID未取得'); }} className={`font-bold text-[13px] truncate cursor-pointer ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}>
+                          <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank'); }} className={`font-bold text-[13px] truncate cursor-pointer ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}>
                             {vip.viewer_name} {vip.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
                           </span>
                           {isCore && <span className="text-[9px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1 py-0.5 rounded flex items-center"><Flame size={8} className="mr-0.5"/> Core</span>}
                         </div>
                         
                         <div className="flex items-center gap-2 mt-0.5">
-                          <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank'); else alert('ID未取得'); }} className="text-[11px] font-mono font-semibold text-indigo-400/90 truncate cursor-pointer hover:underline">
+                          <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank'); }} className="text-[11px] font-mono font-semibold text-indigo-400/90 truncate cursor-pointer hover:underline">
                             {vip.unique_id ? `@${vip.unique_id}` : '@ID未取得'}
                           </span>
                         </div>
@@ -381,7 +389,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           </div>
         </div>
 
-        {/* 💡 即時展開モーダル（スマホ用UI） - 文法エラー完全排除版 */}
+        {/* 💡 即時展開モーダル（スマホ用UI） */}
         {selectedViewer && (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedViewer(null)}>
             <div className="bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md shadow-2xl relative h-[85vh] flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0" onClick={e => e.stopPropagation()}>
@@ -390,10 +398,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
               
               <div className="mb-4 border-b border-slate-800 pb-4">
                 <h2 className="text-xl font-black text-white flex items-center truncate pr-8"><Crown className="mr-3 text-amber-400 flex-shrink-0" /> <span className="truncate">{selectedViewer.name}</span></h2>
-                <div className="mt-3 flex items-center justify-between">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">対象期間の総支援額</span>
-                  <p className="text-2xl font-black text-amber-400">{viewerProfile ? viewerProfile.total_coins.toLocaleString() : '---'} <span className="text-xs text-slate-500 font-normal">ダイヤ</span></p>
-                </div>
               </div>
 
               <div className="flex space-x-2 border-b border-slate-800/80 pb-2 mb-4">
@@ -406,7 +410,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                   loadingViewerProfile || !viewerProfile ? (
                     <div className="flex items-center justify-center h-40 text-indigo-500"><Loader2 className="animate-spin" size={32} /></div>
                   ) : (
-                    <div className="flex flex-col space-y-3">
+                    <div className="flex flex-col space-y-3 animate-in fade-in duration-300">
                       <div className="grid grid-cols-2 gap-3 mb-2">
                         <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800/80"><p className="text-[9px] text-slate-500 font-bold mb-1">初回来訪</p><p className="text-xs font-bold text-slate-200">{viewerProfile.first_seen ? format(parseISO(viewerProfile.first_seen), 'yyyy/MM/dd') : '-'}</p></div>
                         <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800/80"><p className="text-[9px] text-slate-500 font-bold mb-1">最終来訪</p><p className="text-xs font-bold text-slate-200">{viewerProfile.last_seen ? format(parseISO(viewerProfile.last_seen), 'yyyy/MM/dd') : '-'}</p></div>
@@ -441,7 +445,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                       <div className="text-center text-slate-500 py-10 text-xs">ログが見つかりません</div>
                     ) : (
                       viewerLogs.map(log => (
-                        <div key={log.id} className="flex justify-between items-center bg-slate-950/50 p-3 rounded-xl border border-slate-800/50">
+                        <div key={log.id} className="flex justify-between items-center bg-slate-950/50 p-3 rounded-xl border border-slate-800/50 animate-in fade-in duration-300">
                           <div className="flex flex-col">
                             <span className="text-xs font-bold text-slate-200">{log.gift_name || '不明なギフト'} <span className="text-slate-500 text-[10px] ml-1">x{log.count || 1}</span></span>
                             <span className="text-[10px] text-slate-500 mt-1 flex items-center"><Clock size={10} className="mr-1"/> {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
