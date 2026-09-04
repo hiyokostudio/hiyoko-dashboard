@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState, use } from 'react';
+import { useEffect, useState, use, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, Activity, ShieldCheck, AlertTriangle, Clock, X, Edit2, Check, Delete, List, Loader2, BarChart2 } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-type GiftLog = { id: number; created_at: string; coins: number; count?: number; gift_name?: string; viewers: { name: string; unique_id?: string; avatar_url?: string } | null; };
+type GiftLog = { id: number; created_at: string; coins: number; count?: number; gift_name?: string; viewers: { id: string; name: string; unique_id?: string; avatar_url?: string } | null; };
 type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; first_seen?: string; };
 type ListenerProfile = { first_seen: string; last_seen: string; total_coins: number; day_of_week: Record<string, number>; hour_of_day: Record<string, number>; };
 type LiverStat = { system_id: string; username: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; };
@@ -26,10 +26,11 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const [endDate, setEndDate] = useState('');
   const [activeView, setActiveView] = useState<'vips' | 'logs'>('vips'); 
 
-  // リスナーモーダル用
+  // リスナーモーダル用ステート（即時展開のための最適化）
   const [selectedViewer, setSelectedViewer] = useState<{id: string, name: string} | null>(null);
   const [viewerProfile, setViewerProfile] = useState<ListenerProfile | null>(null);
   const [viewerLogs, setViewerLogs] = useState<GiftLog[]>([]);
+  const [loadingViewerProfile, setLoadingViewerProfile] = useState(false);
   const [loadingViewerLogs, setLoadingViewerLogs] = useState(false);
   const [activeModalTab, setActiveModalTab] = useState<'analytics' | 'logs'>('analytics');
 
@@ -88,10 +89,10 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     const channel = supabase.channel(`portal:gift_logs_all`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'gift_logs' }, async (payload) => {
         if (String(payload.new.liver_id) === String(system_id)) {
-            const { data: viewerData } = await supabase.from('viewers').select('name, unique_id, avatar_url').eq('id', payload.new.viewer_id).single();
+            const { data: viewerData } = await supabase.from('viewers').select('id, name, unique_id, avatar_url').eq('id', payload.new.viewer_id).single();
             const newLog: GiftLog = { 
               id: payload.new.id, created_at: payload.new.created_at, coins: payload.new.coins, count: payload.new.count, gift_name: payload.new.gift_name,
-              viewers: { name: viewerData?.name || '不明', unique_id: viewerData?.unique_id, avatar_url: viewerData?.avatar_url } 
+              viewers: viewerData ? { id: viewerData.id, name: viewerData.name, unique_id: viewerData.unique_id, avatar_url: viewerData.avatar_url } : null
             };
             setRecentLogs(prev => [newLog, ...prev].slice(0, 50));
             const { startIso, endIso } = getTimeBounds(); const params: any = { p_system_id: system_id };
@@ -115,8 +116,14 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
 
   useEffect(() => {
     if (selectedViewer && system_id) {
+      setActiveModalTab('analytics');
+      setViewerProfile(null);
+      setViewerLogs([]);
       fetchViewerProfile(system_id, selectedViewer.id);
       fetchViewerLogs(system_id, selectedViewer.id);
+    } else {
+      setViewerProfile(null);
+      setViewerLogs([]);
     }
   }, [selectedViewer]);
 
@@ -129,7 +136,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     }
 
     const { startIso, endIso } = getTimeBounds();
-    let query = supabase.from('gift_logs').select('id, created_at, coins, count, gift_name, viewers(name, unique_id, avatar_url)').eq('liver_id', system_id).order('created_at', { ascending: false }).limit(50);
+    let query = supabase.from('gift_logs').select('id, created_at, coins, count, gift_name, viewers(id, name, unique_id, avatar_url)').eq('liver_id', system_id).order('created_at', { ascending: false }).limit(50);
     if (startIso) query = query.gte('created_at', startIso); if (endIso) query = query.lte('created_at', endIso); 
     const { data: logsRes } = await query; if (logsRes) setRecentLogs(logsRes as unknown as GiftLog[]);
     
@@ -143,8 +150,10 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   };
 
   const fetchViewerProfile = async (liverId: string, viewerId: string) => {
+    setLoadingViewerProfile(true);
     const { data } = await supabase.rpc('get_listener_profile', { p_liver_id: liverId, p_viewer_id: viewerId });
     if (data) setViewerProfile(data as ListenerProfile);
+    setLoadingViewerProfile(false);
   };
 
   const fetchViewerLogs = async (liverId: string, viewerId: string) => {
@@ -164,6 +173,18 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     if (!error) { setIsEditingRate(false); setLiverInfo(prev => prev ? { ...prev, reward_rate: rateVal } : prev); } 
     else { alert('更新に失敗しました'); }
   };
+
+  // 💡 グラフ用のデータを変数として事前計算（JSXでの文法エラーを完全に防ぐ）
+  const dowData = useMemo(() => {
+    if (!viewerProfile) return [];
+    const daysMap: Record<string, string> = { 'Monday': '月', 'Tuesday': '火', 'Wednesday': '水', 'Thursday': '木', 'Friday': '金', 'Saturday': '土', 'Sunday': '日' };
+    return Object.keys(daysMap).map(d => ({ name: daysMap[d], coins: viewerProfile.day_of_week?.[d] || 0 }));
+  }, [viewerProfile]);
+
+  const hodData = useMemo(() => {
+    if (!viewerProfile) return [];
+    return Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 }));
+  }, [viewerProfile]);
 
   if (loading && !liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-indigo-500 animate-pulse">CONNECTING...</div>;
   if (!liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-rose-500">LIVER NOT FOUND</div>;
@@ -195,8 +216,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const currentRewardJPY = Math.floor(currentRewardUSD * exchangeRate);
   const unitPriceUSD = (1000 * (liverInfo.reward_rate / 10000)).toFixed(2);
   const isDanger = (liverStat?.dependency_rate || 0) >= 80 && totalCoins > 0;
-
-  const daysMap = { 'Monday': '月', 'Tuesday': '火', 'Wednesday': '水', 'Thursday': '木', 'Friday': '金', 'Saturday': '土', 'Sunday': '日' };
 
   return (
     <div className="min-h-screen bg-[#050505] text-slate-50 font-sans sm:pb-0 pb-10 animate-in fade-in duration-500">
@@ -296,7 +315,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
               const progress = Math.min((vip.total_coins / 1000) * 100, 100);
 
               return (
-                <div key={vip.viewer_id} className={`flex flex-col p-3 rounded-2xl border transition-all cursor-pointer ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30' : 'bg-slate-900/60 border-slate-800/50'}`} onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})}>
+                <div key={vip.viewer_id} onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})} className={`flex flex-col p-3 rounded-2xl border transition-all cursor-pointer active:scale-[0.98] ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20' : 'bg-slate-900/60 border-slate-800/50 hover:bg-slate-800/80'}`}>
                   <div className="flex items-center">
                     <div className="w-6 text-center flex-shrink-0">
                       {vip.rank === 1 ? <Crown size={16} className="text-amber-400 mx-auto" /> : vip.rank === 2 ? <Award size={16} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={16} className="text-amber-700 mx-auto" /> : <span className="text-xs font-bold text-slate-500">{vip.rank}</span>}
@@ -339,7 +358,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
               <div className="flex flex-col items-center justify-center h-48 text-slate-600"><Search size={48} className="opacity-20 mb-4" /><p className="font-bold text-sm uppercase tracking-widest">No Logs</p><p className="text-xs mt-1">指定期間のログがありません</p></div>
             )}
             {activeView === 'logs' && recentLogs.map((log, i) => (
-              <div key={log.id} className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 ${i === 0 ? 'bg-indigo-600/10 border-indigo-500/30' : 'bg-slate-900/40 border-slate-800/50'}`}>
+              <div key={log.id} onClick={() => log.viewers && setSelectedViewer({id: log.viewers.id, name: log.viewers.name})} className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 cursor-pointer active:scale-[0.98] ${i === 0 ? 'bg-indigo-600/10 border-indigo-500/30' : 'bg-slate-900/40 border-slate-800/50 hover:bg-slate-800/80'}`}>
                 <div className="flex items-center gap-3 overflow-hidden">
                   <div className={`flex-shrink-0 relative z-10 cursor-pointer ${log.viewers?.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank'); }}>
                     <SafeAvatar src={log.viewers?.avatar_url} name={log.viewers?.name || '?'} size="w-10 h-10" />
@@ -348,6 +367,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                     <span className={`font-bold text-sm truncate cursor-pointer flex items-center gap-1 ${log.viewers?.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4 text-slate-200' : 'text-slate-300'}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank'); }}>
                       {log.viewers?.name || '不明'} {log.viewers?.unique_id && <ExternalLink size={10} className="text-slate-600"/>}
                     </span>
+                    <div className="text-[10px] text-slate-500 mt-0.5 flex items-center"><Clock size={10} className="mr-1"/> {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</div>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0 ml-2">
@@ -361,8 +381,8 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           </div>
         </div>
 
-        {/* 💡 完璧な両立：グラフ分析 ＋ 個別生ログの切替式モーダル（スマホ用UI） */}
-        {selectedViewer && viewerProfile && (
+        {/* 💡 即時展開モーダル（スマホ用UI） - 文法エラー完全排除版 */}
+        {selectedViewer && (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedViewer(null)}>
             <div className="bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md shadow-2xl relative h-[85vh] flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0" onClick={e => e.stopPropagation()}>
               <div className="w-12 h-1.5 bg-slate-700 rounded-full mx-auto mb-6 sm:hidden"></div>
@@ -372,7 +392,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                 <h2 className="text-xl font-black text-white flex items-center truncate pr-8"><Crown className="mr-3 text-amber-400 flex-shrink-0" /> <span className="truncate">{selectedViewer.name}</span></h2>
                 <div className="mt-3 flex items-center justify-between">
                   <span className="text-[10px] font-bold text-slate-500 uppercase">対象期間の総支援額</span>
-                  <p className="text-2xl font-black text-amber-400">{viewerProfile.total_coins.toLocaleString()} <span className="text-xs text-slate-500 font-normal">ダイヤ</span></p>
+                  <p className="text-2xl font-black text-amber-400">{viewerProfile ? viewerProfile.total_coins.toLocaleString() : '---'} <span className="text-xs text-slate-500 font-normal">ダイヤ</span></p>
                 </div>
               </div>
 
@@ -381,36 +401,40 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                 <button onClick={() => setActiveModalTab('logs')} className={`flex-1 flex justify-center items-center pb-2 border-b-2 transition-all ${activeModalTab === 'logs' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><List size={14} className="mr-1.5"/> <span className="text-[11px]">履歴</span></button>
               </div>
 
-              <div className="flex-grow overflow-y-auto pr-1 space-y-3 scrollbar-none min-h-0">
+              <div className="flex-grow overflow-y-auto pr-1 scrollbar-none min-h-0">
                 {activeModalTab === 'analytics' ? (
-                  <>
-                    <div className="grid grid-cols-2 gap-3 mb-2">
-                      <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800/80"><p className="text-[9px] text-slate-500 font-bold mb-1">初回来訪</p><p className="text-xs font-bold text-slate-200">{viewerProfile.first_seen ? format(parseISO(viewerProfile.first_seen), 'yyyy/MM/dd') : '-'}</p></div>
-                      <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800/80"><p className="text-[9px] text-slate-500 font-bold mb-1">最終来訪</p><p className="text-xs font-bold text-slate-200">{viewerProfile.last_seen ? format(parseISO(viewerProfile.last_seen), 'yyyy/MM/dd') : '-'}</p></div>
+                  loadingViewerProfile || !viewerProfile ? (
+                    <div className="flex items-center justify-center h-40 text-indigo-500"><Loader2 className="animate-spin" size={32} /></div>
+                  ) : (
+                    <div className="flex flex-col space-y-3">
+                      <div className="grid grid-cols-2 gap-3 mb-2">
+                        <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800/80"><p className="text-[9px] text-slate-500 font-bold mb-1">初回来訪</p><p className="text-xs font-bold text-slate-200">{viewerProfile.first_seen ? format(parseISO(viewerProfile.first_seen), 'yyyy/MM/dd') : '-'}</p></div>
+                        <div className="bg-slate-950/50 p-3 rounded-2xl border border-slate-800/80"><p className="text-[9px] text-slate-500 font-bold mb-1">最終来訪</p><p className="text-xs font-bold text-slate-200">{viewerProfile.last_seen ? format(parseISO(viewerProfile.last_seen), 'yyyy/MM/dd') : '-'}</p></div>
+                      </div>
+                      <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-800/80 h-[180px] flex flex-col mb-3">
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">曜日別 投下トレンド</h4>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={dowData}>
+                            <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
+                            <Tooltip cursor={{fill: '#1e293b'}} contentStyle={{ backgroundColor: '#020617', borderColor: '#334155', borderRadius: '8px', fontSize: '10px' }} itemStyle={{ color: '#818cf8', fontWeight: 'bold' }} />
+                            <Bar dataKey="coins" fill="#818cf8" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
+                      <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-800/80 h-[180px] flex flex-col">
+                        <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">時間帯別 トレンド</h4>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <BarChart data={hodData}>
+                            <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={10} />
+                            <Tooltip cursor={{fill: '#1e293b'}} contentStyle={{ backgroundColor: '#020617', borderColor: '#334155', borderRadius: '8px', fontSize: '10px' }} itemStyle={{ color: '#10b981', fontWeight: 'bold' }} />
+                            <Bar dataKey="coins" fill="#10b981" radius={[4, 4, 0, 0]} />
+                          </BarChart>
+                        </ResponsiveContainer>
+                      </div>
                     </div>
-                    <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-800/80 h-[180px] flex flex-col mb-3">
-                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">曜日別 投下トレンド</h4>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={Object.keys(daysMap).map(d => ({ name: daysMap[d as keyof typeof daysMap], coins: viewerProfile.day_of_week?.[d] || 0 }))}>
-                          <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} />
-                          <Tooltip cursor={{fill: '#1e293b'}} contentStyle={{ backgroundColor: '#020617', borderColor: '#334155', borderRadius: '8px', fontSize: '10px' }} itemStyle={{ color: '#818cf8', fontWeight: 'bold' }} />
-                          <Bar dataKey="coins" fill="#818cf8" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                    <div className="bg-slate-950/50 p-4 rounded-2xl border border-slate-800/80 h-[180px] flex flex-col">
-                      <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">時間帯別 トレンド</h4>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 }))}>
-                          <XAxis dataKey="name" stroke="#64748b" fontSize={9} tickLine={false} axisLine={false} interval="preserveStartEnd" minTickGap={10} />
-                          <Tooltip cursor={{fill: '#1e293b'}} contentStyle={{ backgroundColor: '#020617', borderColor: '#334155', borderRadius: '8px', fontSize: '10px' }} itemStyle={{ color: '#10b981', fontWeight: 'bold' }} />
-                          <Bar dataKey="coins" fill="#10b981" radius={[4, 4, 0, 0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </>
+                  )
                 ) : (
-                  <>
+                  <div className="flex flex-col space-y-3">
                     {loadingViewerLogs ? (
                       <div className="flex items-center justify-center h-40 text-emerald-500"><Loader2 className="animate-spin" size={32} /></div>
                     ) : viewerLogs.length === 0 ? (
@@ -426,7 +450,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                         </div>
                       ))
                     )}
-                  </>
+                  </div>
                 )}
               </div>
             </div>
