@@ -20,6 +20,23 @@ const activeConnections = new Map();
 const retryCounts = new Map();
 const retryTimeouts = new Map();
 
+// 💡 コンボの進捗を記憶するキャッシュ（メモリリーク防止のため古いものから自動消去）
+class GiftCache {
+  constructor(limit = 5000) {
+    this.cache = new Map();
+    this.limit = limit;
+  }
+  get(key) { return this.cache.get(key); }
+  set(key, value) {
+    if (this.cache.size >= this.limit) {
+      const firstKey = this.cache.keys().next().value;
+      this.cache.delete(firstKey);
+    }
+    this.cache.set(key, value);
+  }
+}
+const comboCache = new GiftCache(5000);
+
 const GIFT_PRICES = {
   'Rose': 1, 'TikTok': 1, 'GG': 1, 'Heart Me': 1, 'Mini Speaker': 1, 'Tennis': 1,
   'Popular Vote': 1, 'ぴょこギフ': 1, 'ぼくリス大筆': 1, 'Coffee': 1, 'Ice Cream': 1,
@@ -43,7 +60,7 @@ const getStrId = (val) => {
   return String(val);
 };
 
-console.log('🤖 Hiyoko Intelligence: 監視Botエンジン起動 (v7 究極完全版・日本語対応)');
+console.log('🤖 Hiyoko Intelligence: 監視Botエンジン起動 (v8 究極差分ロジック・リアルタイム捕捉版)');
 
 async function startBot() {
   setInterval(checkTargets, 30000);
@@ -77,7 +94,6 @@ function getBackoffDelay(retryCount) {
   return Math.min(2000 * Math.pow(2, retryCount), 60000) + Math.random() * 1000;
 }
 
-// 💡 妥協なきハイクオリティなプロフィール取得（WAF完全回避・REHYDRATIONデータ抽出）
 async function fetchLiverProfile(username) {
   try {
     const headers = {
@@ -148,7 +164,6 @@ function connectToLive(systemId, username, currentLiverName, currentAvatarUrl) {
       newAvatarUrl = owner.avatarThumb?.urlList?.[0] || owner.avatar_thumb?.url_list?.[0] || owner.avatarUrl || null;
       newLiverName = owner.nickname || owner.displayId || null;
 
-      // 💡 TikTokからデータが取れなかった場合、iPhone偽装でプロフィールから強制抽出
       if (!newAvatarUrl || !newLiverName) {
         const profile = await fetchLiverProfile(username);
         if (profile) {
@@ -159,7 +174,6 @@ function connectToLive(systemId, username, currentLiverName, currentAvatarUrl) {
 
       const updateData = {};
       
-      // 🚨 「TikTok - Make Your Day」や無効な画像を完全に弾く最強の防壁
       if (newAvatarUrl && newAvatarUrl.length <= 250 && newAvatarUrl !== currentAvatarUrl) {
         if (!newAvatarUrl.includes('tiktok_logo')) {
           updateData.avatar_url = newAvatarUrl;
@@ -183,14 +197,31 @@ function connectToLive(systemId, username, currentLiverName, currentAvatarUrl) {
 
   connection.on('gift', async data => {
     try {
-      if (data.giftType === 1 && !data.repeatEnd) return; 
-
       const giftName = data.giftName || data.gift?.name || data.gift?.describe || '不明なギフト';
-      const repeatCount = data.repeatCount || 1;
+      const currentRepeatCount = data.repeatCount || 1;
       
+      const groupId = getStrId(data.groupId) || getStrId(data.gift?.groupId) || getStrId(data.msgId);
+      let diffCount = currentRepeatCount;
+
+      // 💡 差分計算（Diff）ロジック
+      if (groupId) {
+        const prevCount = comboCache.get(groupId) || 0;
+        diffCount = currentRepeatCount - prevCount;
+        
+        // 差分が0以下（重複通知や遅延した古い通知）の場合は完全に弾く
+        if (diffCount <= 0) return;
+        
+        // キャッシュを最新の連打数に更新
+        comboCache.set(groupId, currentRepeatCount);
+      }
+
       let diamondCount = data.diamondCount || data.gift?.diamondCount || data.gift?.diamond_count || data.gift?.coinCount || 0;
       if (diamondCount === 0) diamondCount = GIFT_PRICES[giftName] || 0;
-      const coins = diamondCount * repeatCount;
+      
+      // 💡 確実な単価 × 増えた分（差分）の数
+      const coins = diamondCount * diffCount;
+
+      if (coins <= 0) return;
 
       const rawUserId = getStrId(data.userId) || getStrId(data.user?.userId) || getStrId(data.user?.id) || getStrId(data.user?.uid);
       const uniqueId = data.uniqueId || data.user?.uniqueId || data.user?.displayId || data.user?.display_id || 'unknown';
@@ -220,10 +251,10 @@ function connectToLive(systemId, username, currentLiverName, currentAvatarUrl) {
         viewerId = newViewer.id;
       }
 
-      const { error: insertError } = await supabase.from('gift_logs').insert({ liver_id: systemId, viewer_id: viewerId, gift_id: String(rawGiftId), gift_name: giftName, coins: coins, count: repeatCount });
+      const { error: insertError } = await supabase.from('gift_logs').insert({ liver_id: systemId, viewer_id: viewerId, gift_id: String(rawGiftId), gift_name: giftName, coins: coins, count: diffCount });
       
-      if (!insertError && coins > 0) {
-        console.log(`🎁 [${username}] ギフト記録完了: ${nickname} から ${giftName} x${repeatCount} (+${coins}ダイヤ)`);
+      if (!insertError) {
+        console.log(`🎁 [${username}] ギフト記録完了: ${nickname} から ${giftName} x${diffCount} (+${coins}ダイヤ) [現在コンボ: ${currentRepeatCount}]`);
       }
     } catch (e) {}
   });
