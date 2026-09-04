@@ -2,7 +2,7 @@
 
 import { useEffect, useState, use, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
-import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, Activity, ShieldCheck, AlertTriangle, Clock, X, Edit2, Check, Delete, List, Loader2, BarChart2, MoonMoon } from 'lucide-react';
+import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, Activity, ShieldCheck, AlertTriangle, Clock, X, Edit2, Check, Delete, List, Loader2, BarChart2, Moon } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -355,7 +355,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                     <div className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank'); }}>
                       <SafeAvatar src={vip.avatar_url} name={vip.viewer_name} size="w-10 h-10" />
                       {/* 💡 休眠バッジ */}
-                      {isSleeping && <div title="3日以上離脱の可能性" className="absolute -top-1 -right-1 bg-slate-900 border border-slate-700 rounded-full p-0.5 shadow-lg"><MoonMoon size={10} className="text-indigo-400"/></div>}
+                      {isSleeping && <div title="3日以上離脱の可能性" className="absolute -top-1 -right-1 bg-slate-900 border border-slate-700 rounded-full p-0.5 shadow-lg"><Moon size={10} className="text-indigo-400"/></div>}
                     </div>
 
                     <div className="flex-grow ml-3 min-w-0">

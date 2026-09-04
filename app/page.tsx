@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2, Search, History, List, MoonMoon } from 'lucide-react';
+import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2, Search, History, List, Moon } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 type LiverStat = { system_id: string; username: string; liver_name?: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; pin_code: string; };
@@ -473,7 +473,7 @@ export default function Dashboard() {
                         <div className="ml-2 flex-shrink-0 relative z-10">
                           <SafeAvatar src={vip.avatar_url} name={vip.viewer_name} size="w-10 h-10" />
                           {/* 💡 育成用：休眠バッジ */}
-                          {isSleeping && <div title="3日以上離脱の可能性" className="absolute -top-1 -right-1 bg-slate-900 border border-slate-700 rounded-full p-0.5 shadow-lg"><MoonMoon size={10} className="text-indigo-400"/></div>}
+                          {isSleeping && <div title="3日以上離脱の可能性" className="absolute -top-1 -right-1 bg-slate-900 border border-slate-700 rounded-full p-0.5 shadow-lg"><Moon size={10} className="text-indigo-400"/></div>}
                         </div>
                         <div className="flex-grow ml-4 min-w-0">
                           <div className="flex items-center gap-2">
