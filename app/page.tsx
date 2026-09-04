@@ -3,12 +3,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2, Search, History, List } from 'lucide-react';
+import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2, Search, History, List, MoonMoon } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 
 type LiverStat = { system_id: string; username: string; liver_name?: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; pin_code: string; };
 type GiftLog = { id: number; created_at: string; coins: number; count?: number; gift_name?: string; viewers: { id: string; name: string; unique_id?: string; avatar_url?: string } | null; };
-type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; first_seen?: string; };
+type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; first_seen?: string; last_seen?: string; };
 type ListenerProfile = { first_seen: string; last_seen: string; total_coins: number; day_of_week: Record<string, number>; hour_of_day: Record<string, number>; };
 
 export default function Dashboard() {
@@ -44,6 +44,7 @@ export default function Dashboard() {
   const [editPinValue, setEditPinValue] = useState('');
 
   const adminMasterKey = "hiyoko_god_mode_2026";
+  const scrollbarClass = "[&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-thumb]:rounded-full hover:[&::-webkit-scrollbar-thumb]:bg-slate-600";
 
   const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => {
     const initial = name ? name.charAt(0) : '?';
@@ -249,6 +250,7 @@ export default function Dashboard() {
 
   const selectedLiver = stats.find(s => s.system_id === selectedLiverId);
 
+  // 💡 安全に事前計算されたグラフデータ
   const dowData = useMemo(() => {
     if (!viewerProfile) return [];
     const daysMap: Record<string, string> = { 'Monday': '月', 'Tuesday': '火', 'Wednesday': '水', 'Thursday': '木', 'Friday': '金', 'Saturday': '土', 'Sunday': '日' };
@@ -259,6 +261,12 @@ export default function Dashboard() {
     if (!viewerProfile) return [];
     return Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 }));
   }, [viewerProfile]);
+
+  // 💡 育成用ファネル分析データの計算
+  const coreCount = vipListeners.filter(v => v.total_coins >= 1000).length;
+  const middleCount = vipListeners.filter(v => v.total_coins >= 100 && v.total_coins < 1000).length;
+  const lightCount = vipListeners.filter(v => v.total_coins > 0 && v.total_coins < 100).length;
+  const totalAnalyzed = coreCount + middleCount + lightCount || 1;
 
   if (loading && stats.length === 0) return <div className="min-h-screen bg-slate-950 flex items-center justify-center font-bold text-slate-500">システム初期化中...</div>;
 
@@ -301,38 +309,57 @@ export default function Dashboard() {
             <div className="flex justify-between items-center mb-6"><h3 className="text-xs font-bold text-slate-400 flex items-center"><ShieldCheck size={14} className="mr-2" />健全度フィルター</h3>{healthFilter !== 'all' && <button onClick={() => setHealthFilter('all')} className="text-[10px] bg-slate-800 text-slate-300 px-2 py-1 rounded hover:bg-slate-700">解除</button>}</div>
             <div className="space-y-3">
               <div onClick={() => setHealthFilter(healthFilter === 'safe' ? 'all' : 'safe')} className={`flex items-center justify-between p-2 -mx-2 rounded-lg cursor-pointer transition-colors ${healthFilter === 'safe' ? 'bg-emerald-500/10' : 'hover:bg-slate-800/50'}`}>
-                <div className="flex items-center gap-3"><div className="w-2 h-2 rounded-full bg-emerald-500"></div><span className="text-sm font-bold text-slate-300">健全</span></div><span className="font-black text-white text-lg">{safeCount}</span>
+                <div className="flex items-center gap-3"><div className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.8)]"></div><span className="text-sm font-bold text-slate-300">健全</span></div><span className="font-black text-white text-lg">{safeCount}</span>
               </div>
               <div onClick={() => setHealthFilter(healthFilter === 'warning' ? 'all' : 'warning')} className={`flex items-center justify-between p-2 -mx-2 rounded-lg cursor-pointer transition-colors ${healthFilter === 'warning' ? 'bg-amber-500/10' : 'hover:bg-slate-800/50'}`}>
-                <div className="flex items-center gap-3"><div className="w-2 h-2 rounded-full bg-amber-500"></div><span className="text-sm font-bold text-slate-300">注意</span></div><span className="font-black text-white text-lg">{warningCount}</span>
+                <div className="flex items-center gap-3"><div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.8)]"></div><span className="text-sm font-bold text-slate-300">注意</span></div><span className="font-black text-white text-lg">{warningCount}</span>
               </div>
               <div onClick={() => setHealthFilter(healthFilter === 'danger' ? 'all' : 'danger')} className={`flex items-center justify-between p-2 -mx-2 rounded-lg cursor-pointer transition-colors ${healthFilter === 'danger' ? 'bg-rose-500/10' : 'hover:bg-slate-800/50'}`}>
-                <div className="flex items-center gap-3"><div className="w-2 h-2 rounded-full bg-rose-500"></div><span className="text-sm font-bold text-slate-300">危険</span></div><span className="font-black text-rose-400 text-lg">{dangerCount}</span>
+                <div className="flex items-center gap-3"><div className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]"></div><span className="text-sm font-bold text-slate-300">危険</span></div><span className="font-black text-rose-400 text-lg">{dangerCount}</span>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="bg-slate-900/80 rounded-3xl shadow-lg border border-slate-800 overflow-hidden">
-          <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900/50">
-            <h3 className="text-sm font-black text-slate-200">ライバー分析マトリックス</h3>
+        <div className="bg-slate-900/80 rounded-3xl shadow-lg border border-slate-800 overflow-hidden backdrop-blur-md">
+          <div className="p-5 border-b border-slate-800 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/50">
+            <h3 className="text-sm font-black text-slate-200">ライバー分析マトリックス {healthFilter !== 'all' && <span className="text-[10px] bg-indigo-500 text-white px-2 py-0.5 rounded ml-2">フィルター適用中</span>}</h3>
             <div className="flex items-center gap-2">
-              <button onClick={handleExportCSV} disabled={isExporting} className="flex items-center text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl border border-slate-700 disabled:opacity-50">
+              <button onClick={handleExportCSV} disabled={isExporting} className="flex items-center text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl border border-slate-700 transition-colors disabled:opacity-50">
                 <Download size={14} className="mr-2" /> {isExporting ? '生成中...' : 'CSV出力'}
               </button>
+              
+              {isAdding ? (
+                <div className="flex items-center space-x-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700 animate-in fade-in">
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500 font-bold">@</span>
+                    <input type="text" value={newUsername} onChange={e => setNewUsername(e.target.value)} placeholder="TikTok IDを入力" className="text-xs pl-6 pr-3 py-2 outline-none w-40 bg-slate-950 border border-slate-700 rounded-lg text-white font-mono" disabled={isSearching} />
+                  </div>
+                  {showManualId && ( <input type="text" value={newSystemId} onChange={e => setNewSystemId(e.target.value)} placeholder="システムID (手動)" className="text-xs px-3 py-2 outline-none w-32 bg-slate-950 border border-rose-500/50 rounded-lg text-white font-mono" /> )}
+                  <button onClick={handleAddTarget} disabled={isSearching || !newUsername} className="flex items-center justify-center bg-indigo-600 hover:bg-indigo-500 disabled:bg-indigo-600/50 text-white px-4 py-2 rounded-lg text-xs font-bold transition-colors w-24">
+                    {isSearching ? <Loader2 size={14} className="animate-spin" /> : (showManualId ? '強制追加' : '検索＆追加')}
+                  </button>
+                  <button onClick={() => { setIsAdding(false); setShowManualId(false); }} className="text-slate-400 hover:text-slate-200 p-2"><X size={16}/></button>
+                </div>
+              ) : (
+                <button onClick={() => setIsAdding(true)} className="flex items-center text-xs font-bold text-slate-300 bg-indigo-600/20 text-indigo-400 hover:bg-indigo-600/40 px-4 py-2 rounded-xl border border-indigo-500/30 transition-colors"><UserPlus size={14} className="mr-2" /> ライバー追加</button>
+              )}
             </div>
           </div>
-          <div className="overflow-x-auto max-h-[400px]">
-            <table className="w-full text-left border-collapse min-w-[1000px]">
+          <div className={`overflow-x-auto max-h-[400px] overflow-y-auto ${scrollbarClass}`}>
+            <table className="w-full text-left border-collapse min-w-[1000px] select-none relative">
               <thead className="sticky top-0 z-10 bg-slate-950 shadow-md">
                 <tr className="text-[10px] font-black text-slate-500 border-b border-slate-800/80">
-                  <th className="p-4 pl-6 cursor-pointer hover:text-slate-300" onClick={() => handleSort('username')}>ライバー <ArrowUpDown size={10} className="inline ml-1" /></th>
-                  <th className="p-4 text-right cursor-pointer hover:text-slate-300" onClick={() => handleSort('total_coins')}>獲得ダイヤ <ArrowUpDown size={10} className="inline ml-1" /></th>
-                  <th className="p-4 text-center cursor-pointer hover:text-slate-300" onClick={() => handleSort('unique_listeners')}>ユニークリスナー <ArrowUpDown size={10} className="inline ml-1" /></th>
-                  <th className="p-4 text-center cursor-pointer hover:text-slate-300" onClick={() => handleSort('core_fans')}>コアファン <ArrowUpDown size={10} className="inline ml-1" /></th>
-                  <th className="p-4 w-48 cursor-pointer hover:text-slate-300" onClick={() => handleSort('dependency_rate')}>太客依存率 <ArrowUpDown size={10} className="inline ml-1" /></th>
+                  <th className="p-4 pl-6 cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('username')}>ライバー <ArrowUpDown size={10} className="inline ml-1" /></th>
+                  <th className="p-4 text-right cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('total_coins')}>獲得ダイヤ <ArrowUpDown size={10} className="inline ml-1" /></th>
+                  <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('unique_listeners')}>ユニークリスナー <ArrowUpDown size={10} className="inline ml-1" /></th>
+                  <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('core_fans')}>コアファン <ArrowUpDown size={10} className="inline ml-1" /></th>
+                  <th className="p-4 w-48 cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('dependency_rate')}>太客依存率 <ArrowUpDown size={10} className="inline ml-1" /></th>
+                  {/* 💡 消えていた機能の完全復活 */}
+                  <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('reward_rate')}>報酬率 <ArrowUpDown size={10} className="inline ml-1" /></th>
+                  <th className="p-4 text-center">PINコード</th>
                   <th className="p-4 text-center">健全度</th>
-                  <th className="p-4 text-center pr-6">アクション</th>
+                  <th className="p-4 text-center pr-6">監視 / アクション</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/50">
@@ -341,23 +368,54 @@ export default function Dashboard() {
                   const isSafe = liver.dependency_rate < 50 && liver.total_coins > 0;
                   const isSelected = selectedLiverId === liver.system_id;
                   return (
-                    <tr key={liver.system_id} onClick={() => setSelectedLiverId(prev => prev === liver.system_id ? null : liver.system_id)} className={`cursor-pointer group ${isSelected ? 'bg-indigo-500/10' : 'hover:bg-slate-800/30'} ${!liver.is_active ? 'opacity-30' : ''}`}>
-                      <td className="p-4 pl-6 flex items-center gap-3">
-                        <SafeAvatar src={liver.avatar_url} name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />
-                        <div className="flex flex-col"><div className="font-bold text-slate-200">{liver.liver_name || liver.username}</div><div className="text-[11px] font-mono text-indigo-400">@{liver.username}</div></div>
+                    <tr key={liver.system_id} onClick={() => setSelectedLiverId(prev => prev === liver.system_id ? null : liver.system_id)} className={`cursor-pointer transition-colors group ${isSelected ? 'bg-indigo-500/10 border-l-2 border-indigo-500' : 'hover:bg-slate-800/30 border-l-2 border-transparent'} ${!liver.is_active ? 'opacity-30' : ''}`}>
+                      <td className="p-4 pl-6 flex items-center gap-3 relative z-10">
+                        <div className="flex items-center gap-3 cursor-pointer group/link hover:opacity-80 transition-opacity">
+                          <SafeAvatar src={liver.avatar_url} name={liver.liver_name || liver.username} size="w-9 h-9" textSize="text-xs" />
+                          <div className="flex flex-col">
+                            <div className={`font-bold flex items-center gap-1 ${isSelected ? 'text-indigo-400' : 'text-slate-200'}`}>
+                              {liver.liver_name || liver.username} 
+                              <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.open(`https://www.tiktok.com/@${liver.username}`, '_blank'); }} className="p-1 hover:bg-slate-800 rounded text-slate-500 hover:text-indigo-400 transition-colors"><ExternalLink size={12} /></button>
+                            </div>
+                            <div className="text-[11px] font-mono font-semibold text-indigo-400/90 mt-0.5">@{liver.username}</div>
+                          </div>
+                        </div>
                       </td>
                       <td className="p-4 text-right font-black text-slate-200">{liver.total_coins.toLocaleString()}</td>
-                      <td className="p-4 text-center font-bold text-slate-300">{liver.unique_listeners}</td>
-                      <td className="p-4 text-center font-black text-amber-400">{liver.core_fans}</td>
+                      <td className="p-4 text-center font-bold text-slate-300"><div className="flex items-center justify-center gap-1.5"><Users size={14} className="text-slate-500"/> {liver.unique_listeners.toLocaleString()}</div></td>
+                      <td className="p-4 text-center font-black text-amber-400">{liver.core_fans > 0 ? <div className="flex items-center justify-center gap-1 text-amber-400"><Flame size={14}/> {liver.core_fans.toLocaleString()}</div> : <span className="text-slate-700">0</span>}</td>
                       <td className="p-4"><div className="flex items-center gap-3"><span className="w-10 text-xs font-black text-slate-300 text-right">{liver.total_coins > 0 ? `${liver.dependency_rate}%` : '-'}</span><div className="flex-grow h-1.5 bg-slate-800 rounded-full overflow-hidden"><div className={`h-full rounded-full ${isDanger ? 'bg-rose-500' : isSafe ? 'bg-emerald-500' : 'bg-amber-400'}`} style={{ width: `${Math.min(liver.total_coins > 0 ? liver.dependency_rate : 0, 100)}%` }}></div></div></div></td>
+                      {/* 💡 報酬率の復活 */}
+                      <td className="p-4 text-center"><span className="font-bold text-slate-300 text-sm">{Number(liver.reward_rate).toFixed(1)}%</span></td>
+                      {/* 💡 PINコードの復活 */}
+                      <td className="p-4 text-center" onClick={(e) => e.stopPropagation()}>
+                        {editingPin === liver.system_id ? (
+                          <div className="flex items-center justify-center gap-1">
+                            <input type="text" maxLength={4} value={editPinValue} onChange={e => setEditPinValue(e.target.value.replace(/\D/g, ''))} className="w-12 bg-slate-950 border border-indigo-500 rounded px-1 py-0.5 text-xs text-center text-white outline-none font-mono tracking-widest" autoFocus />
+                            <button onClick={() => handlePinUpdate(liver.system_id)} className="text-emerald-400 hover:text-emerald-300"><Check size={14}/></button>
+                            <button onClick={() => setEditingPin(null)} className="text-slate-500 hover:text-slate-300"><X size={14}/></button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center gap-1.5 group/pin cursor-pointer border border-transparent hover:border-slate-700 hover:bg-slate-800/50 px-2 py-1 rounded transition-colors" onClick={() => { setEditingPin(liver.system_id); setEditPinValue(liver.pin_code); }}>
+                            <KeyRound size={12} className={liver.pin_code === '0000' ? 'text-amber-500/70' : 'text-slate-500'} />
+                            <span className={`font-mono text-xs font-bold tracking-widest ${liver.pin_code === '0000' ? 'text-amber-500' : 'text-slate-300'}`}>{liver.pin_code}</span>
+                            <Edit2 size={10} className="text-slate-600 group-hover/pin:text-indigo-400 opacity-0 group-hover/pin:opacity-100" />
+                          </div>
+                        )}
+                      </td>
                       <td className="p-4 text-center">
                         {liver.total_coins === 0 ? <span className="text-[10px] font-bold text-slate-600 border border-slate-700 px-2 py-0.5 rounded">データなし</span>
                          : isDanger ? <span className="text-[10px] font-black text-rose-400 bg-rose-500/10 border border-rose-500/20 px-2 py-1 rounded inline-flex items-center gap-1 w-20 justify-center"><AlertTriangle size={12}/> 危険</span>
                          : isSafe ? <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-1 rounded inline-flex items-center gap-1 w-20 justify-center"><ShieldCheck size={12}/> 健全</span>
                          : <span className="text-[10px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-1 rounded inline-flex items-center gap-1 w-20 justify-center">注意</span>}
                       </td>
+                      {/* 💡 コピー＆ポータルボタンの復活 */}
                       <td className="p-4 pr-6 text-center" onClick={(e) => e.stopPropagation()}>
                          <div className="flex items-center justify-end gap-3">
+                           <div className="flex items-center gap-1 mr-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                             <button onClick={() => handleCopyPortalUrl(liver.system_id)} className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg border border-slate-700 transition-colors tooltip-trigger relative">{copiedId === liver.system_id ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}</button>
+                             <button onClick={() => handleOpenPortalAsAdmin(liver.system_id)} className="p-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 rounded-lg border border-indigo-500/30 transition-colors"><Smartphone size={14} /></button>
+                           </div>
                            <button onClick={() => toggleStatus(liver.system_id, liver.is_active)} className={`relative inline-flex h-5 w-9 items-center rounded-full ${liver.is_active ? 'bg-indigo-600' : 'bg-slate-700'}`}><span className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${liver.is_active ? 'translate-x-5' : 'translate-x-1'}`} /></button>
                          </div>
                       </td>
@@ -369,29 +427,88 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {selectedLiverId && (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 h-[550px] flex flex-col">
-              <div className="flex items-center gap-2 mb-6"><Crown className="h-5 w-5 text-amber-400" /><span className="text-sm font-black text-slate-200">VIP CRM</span></div>
-              <div className="flex-grow overflow-y-auto pr-2 space-y-3">
-                {vipListeners.map((vip) => (
-                  <div key={vip.viewer_id} onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})} className="flex items-center p-3 rounded-xl border bg-slate-950/50 hover:bg-slate-800/80 cursor-pointer border-slate-800/50">
-                    <div className="w-8 text-center"><span className="text-sm font-bold text-slate-500">{vip.rank}</span></div>
-                    <SafeAvatar src={vip.avatar_url} name={vip.viewer_name} size="w-10 h-10" extraClass="ml-2" />
-                    <div className="flex-grow ml-4"><span className="font-bold text-sm text-slate-200">{vip.viewer_name}</span><div className="text-[11px] font-mono text-indigo-400">{vip.unique_id ? `@${vip.unique_id}` : '@unknown'}</div></div>
-                    <div className="text-right font-black text-sm text-indigo-400">{vip.total_coins.toLocaleString()} <span className="text-[10px] text-slate-500 font-normal">ダイヤ</span></div>
-                  </div>
-                ))}
+        {!selectedLiverId && (
+          <div className="bg-slate-900/40 border border-slate-800/50 border-dashed rounded-3xl p-16 flex flex-col items-center justify-center text-slate-500">
+             <MousePointer2 size={48} className="opacity-20 mb-4 animate-bounce" />
+             <p className="font-black text-lg text-slate-400">ライバーを選択してください</p>
+             <p className="text-sm mt-2 font-medium">上のマトリックスから対象をクリックすると、詳細な顧客管理(CRM)を展開します。</p>
+          </div>
+        )}
+
+        {selectedLiverId && selectedLiver && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-in fade-in slide-in-from-bottom-4">
+            <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col relative overflow-hidden backdrop-blur-md h-[550px]">
+              <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none"><Crown size={120} /></div>
+              <div className="flex items-center justify-between mb-4 relative z-10">
+                <div className="flex items-center gap-2"><Crown className="h-5 w-5 text-amber-400" /><span className="text-sm font-black text-slate-200">VIP CRM</span><span className="text-[11px] font-mono text-indigo-400/80 ml-2">@{selectedLiver.username}</span></div>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => handleCopyPortalUrl(selectedLiver.system_id)} className={`flex items-center text-xs font-bold px-3 py-1.5 rounded-lg border transition-colors ${copiedId === selectedLiver.system_id ? 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'}`}>{copiedId === selectedLiver.system_id ? <Check size={12} className="mr-1.5"/> : <Copy size={12} className="mr-1.5"/>} URLコピー</button>
+                  <button onClick={() => handleOpenPortalAsAdmin(selectedLiver.system_id)} className="flex items-center text-xs font-bold px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all"><Smartphone size={12} className="mr-1.5"/> ポータルを確認</button>
+                </div>
+              </div>
+
+              {/* 💡 ライバー育成用：ファネル分析バー */}
+              <div className="mb-4 bg-slate-950/50 p-3 rounded-xl border border-slate-800/80 relative z-10">
+                <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1.5 uppercase tracking-widest">
+                  <span>コア層 (1K+) <span className="text-orange-400">{coreCount}名</span></span>
+                  <span>ミドル層 (100+) <span className="text-indigo-400">{middleCount}名</span></span>
+                  <span>ライト層 <span className="text-slate-500">{lightCount}名</span></span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-2 flex overflow-hidden">
+                  <div style={{width: `${(coreCount/totalAnalyzed)*100}%`}} className="bg-orange-500 transition-all"></div>
+                  <div style={{width: `${(middleCount/totalAnalyzed)*100}%`}} className="bg-indigo-500 transition-all"></div>
+                  <div style={{width: `${(lightCount/totalAnalyzed)*100}%`}} className="bg-slate-500 transition-all"></div>
+                </div>
+              </div>
+              
+              <div className={`flex-grow overflow-y-auto pr-2 space-y-3 ${scrollbarClass}`}>
+                {vipListeners.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-slate-600"><Users size={48} className="opacity-20 mb-4" /><p className="font-bold text-sm uppercase tracking-widest">No Listeners</p></div>
+                ) : (
+                  vipListeners.map((vip) => {
+                    const isSleeping = vip.last_seen && (new Date().getTime() - new Date(vip.last_seen).getTime()) > 3 * 24 * 60 * 60 * 1000;
+                    return (
+                      <div key={vip.viewer_id} onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})} className={`flex items-center p-3 rounded-xl border transition-colors cursor-pointer group ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20' : 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-800/80'}`}>
+                        <div className="w-8 text-center flex-shrink-0">{vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto group-hover:scale-110 transition-transform" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}</div>
+                        <div className="ml-2 flex-shrink-0 relative z-10">
+                          <SafeAvatar src={vip.avatar_url} name={vip.viewer_name} size="w-10 h-10" />
+                          {/* 💡 育成用：休眠バッジ */}
+                          {isSleeping && <div title="3日以上離脱の可能性" className="absolute -top-1 -right-1 bg-slate-900 border border-slate-700 rounded-full p-0.5 shadow-lg"><MoonMoon size={10} className="text-indigo-400"/></div>}
+                        </div>
+                        <div className="flex-grow ml-4 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className={`font-bold text-sm truncate ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}>{vip.viewer_name}</span>
+                            {vip.total_coins >= 1000 && <span className="text-[9px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1 py-0.5 rounded"><Flame size={8} className="inline mr-0.5"/>Core</span>}
+                          </div>
+                          <span className="text-[11px] font-mono text-indigo-400/90 truncate">{vip.unique_id ? `@${vip.unique_id}` : '@unknown'}</span>
+                        </div>
+                        <div className="flex flex-col items-end ml-4 flex-shrink-0">
+                          <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
+                          <span className="text-[10px] text-slate-500 font-medium flex items-center mt-1"><Clock size={10} className="mr-1 opacity-50"/> {vip.last_seen ? format(parseISO(vip.last_seen), 'MM/dd') : '-'}</span>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
-            
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 h-[550px] flex flex-col">
-              <h3 className="text-sm font-black text-slate-300 mb-4 pb-4 border-b border-slate-800">最新ログ</h3>
-              <div className="flex-grow overflow-y-auto space-y-2 pr-2">
-                {detailLogs.map(log => (
-                  <div key={log.id} onClick={() => log.viewers && setSelectedViewer({id: log.viewers.id, name: log.viewers.name})} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-800/80 cursor-pointer border border-slate-800/50">
-                    <div className="flex flex-col"><span className="font-bold text-xs text-slate-200">{log.viewers?.name}</span><span className="text-[10px] text-slate-500">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span></div>
-                    <div className="flex items-center gap-2"><span className="text-[10px] text-slate-400">{log.gift_name}</span><span className="font-black text-emerald-400 text-xs">+{log.coins}</span></div>
+
+            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl p-6 shadow-xl flex flex-col overflow-hidden backdrop-blur-md h-[550px]">
+              <h3 className="text-sm font-black text-slate-300 mb-4 pb-4 border-b border-slate-800/80"><Coins className="mr-2 h-4 w-4 inline text-emerald-400" />最新ログ</h3>
+              <div className={`flex-grow overflow-y-auto space-y-2 pr-2 ${scrollbarClass}`}>
+                {detailLogs.map((log) => (
+                  <div key={log.id} onClick={() => log.viewers && setSelectedViewer({id: log.viewers.id, name: log.viewers.name})} className="flex items-center justify-between p-3 rounded-xl bg-slate-950/50 hover:bg-slate-800/80 transition-colors border border-slate-800/50 cursor-pointer">
+                    <div className="flex items-center gap-3 overflow-hidden">
+                      <SafeAvatar src={log.viewers?.avatar_url} name={log.viewers?.name || '不明'} size="w-9 h-9" textSize="text-xs" />
+                      <div className="flex flex-col overflow-hidden">
+                        <span className="font-bold text-slate-200 text-sm truncate">{log.viewers?.name || '不明'}</span>
+                        <span className="text-[10px] text-slate-500 truncate mt-0.5">{format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 ml-2 flex-shrink-0">
+                      {log.gift_name && <span className="text-[10px] font-bold text-slate-400 truncate max-w-[80px]">{log.gift_name}</span>}
+                      <span className="font-black text-emerald-400 text-xs bg-emerald-500/10 px-2 py-1 rounded border border-emerald-500/20">+{log.coins}</span>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -399,13 +516,23 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* 💡 エラーの原因を完全排除した即時展開モーダル */}
         {selectedViewer && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedViewer(null)}>
-            <div className="bg-slate-900 border border-slate-700 rounded-3xl p-6 max-w-2xl w-full shadow-2xl relative h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
-              <button onClick={() => setSelectedViewer(null)} className="absolute top-4 right-4 text-slate-400 hover:text-white bg-slate-800 p-2 rounded-full"><X size={16}/></button>
+            <div className="bg-slate-900 border border-slate-700 rounded-3xl p-8 max-w-4xl w-full shadow-2xl relative overflow-hidden flex flex-col h-[85vh]" onClick={e => e.stopPropagation()}>
+              <button onClick={() => setSelectedViewer(null)} className="absolute top-6 right-6 text-slate-400 hover:text-white transition-colors bg-slate-800 p-2 rounded-full"><X size={20}/></button>
               
               <div className="mb-6 border-b border-slate-800 pb-4">
-                <h2 className="text-xl font-black text-white flex items-center"><List className="mr-3 text-indigo-400" /> {selectedViewer.name}</h2>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-2xl font-black text-white flex items-center"><Crown className="mr-3 text-amber-400" /> {selectedViewer.name}</h2>
+                    <div className="flex gap-8 mt-4">
+                      <div><p className="text-xs text-slate-400 font-bold mb-1">総支援額</p><p className="text-2xl font-black text-amber-400">{viewerProfile ? viewerProfile.total_coins.toLocaleString() : '---'} <span className="text-sm text-slate-500 font-normal">ダイヤ</span></p></div>
+                      <div><p className="text-xs text-slate-400 font-bold mb-1">初回来訪</p><p className="text-sm font-bold text-slate-200 mt-2">{viewerProfile?.first_seen ? format(parseISO(viewerProfile.first_seen), 'yyyy/MM/dd HH:mm') : '-'}</p></div>
+                      <div><p className="text-xs text-slate-400 font-bold mb-1">最終来訪</p><p className="text-sm font-bold text-slate-200 mt-2">{viewerProfile?.last_seen ? format(parseISO(viewerProfile.last_seen), 'yyyy/MM/dd HH:mm') : '-'}</p></div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="flex space-x-2 border-b border-slate-800/80 pb-2 mb-4">
@@ -413,14 +540,12 @@ export default function Dashboard() {
                 <button onClick={() => setActiveModalTab('logs')} className={`flex items-center px-4 py-2 border-b-2 transition-all ${activeModalTab === 'logs' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><List size={16} className="mr-2"/> 個別ギフト履歴</button>
               </div>
 
-              <div className="flex-grow overflow-y-auto pr-2">
+              <div className={`flex-grow overflow-y-auto pr-2 ${scrollbarClass}`}>
                 {activeModalTab === 'analytics' ? (
-                  loadingViewerProfile ? (
+                  loadingViewerProfile || !viewerProfile ? (
                     <div className="flex items-center justify-center h-full text-indigo-500"><Loader2 className="animate-spin" size={32} /></div>
-                  ) : !viewerProfile ? (
-                    <div className="flex items-center justify-center h-full text-slate-500 text-sm font-bold">データがありません</div>
                   ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-full pb-4 animate-in fade-in duration-300">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-full pb-4">
                       <div className="bg-slate-950/50 p-5 rounded-2xl border border-slate-800/80 flex flex-col min-h-[250px]">
                         <h4 className="text-xs font-bold text-slate-400 mb-4">曜日別 投下トレンド</h4>
                         <ResponsiveContainer width="100%" height="100%">
@@ -449,7 +574,7 @@ export default function Dashboard() {
                   ) : viewerLogs.length === 0 ? (
                     <div className="text-center text-slate-500 py-10">ログが見つかりません</div>
                   ) : (
-                    <div className="space-y-2 animate-in fade-in duration-300">
+                    <div className="space-y-2">
                       {viewerLogs.map(log => (
                         <div key={log.id} className="flex justify-between items-center bg-slate-950/50 p-4 rounded-xl border border-slate-800/50">
                           <div className="flex flex-col">

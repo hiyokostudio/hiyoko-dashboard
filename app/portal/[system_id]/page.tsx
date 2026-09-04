@@ -2,12 +2,12 @@
 
 import { useEffect, useState, use, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
-import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, Activity, ShieldCheck, AlertTriangle, Clock, X, Edit2, Check, Delete, List, Loader2, BarChart2 } from 'lucide-react';
+import { Flame, Coins, Zap, TrendingUp, Search, Crown, Award, ExternalLink, Users, Activity, ShieldCheck, AlertTriangle, Clock, X, Edit2, Check, Delete, List, Loader2, BarChart2, MoonMoon } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 type GiftLog = { id: number; created_at: string; coins: number; count?: number; gift_name?: string; viewers: { id: string; name: string; unique_id?: string; avatar_url?: string } | null; };
-type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; first_seen?: string; };
+type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; first_seen?: string; last_seen?: string; };
 type ListenerProfile = { first_seen: string; last_seen: string; total_coins: number; day_of_week: Record<string, number>; hour_of_day: Record<string, number>; };
 type LiverStat = { system_id: string; username: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; };
 
@@ -40,6 +40,8 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const [pinError, setPinError] = useState(false);
 
   const adminMasterKey = "hiyoko_god_mode_2026";
+  // 💡 ポータルのスクロールバー美化
+  const scrollbarClass = "[&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:bg-slate-700 [&::-webkit-scrollbar-thumb]:rounded-full";
 
   const AvatarFallback = ({ name, size = "w-10 h-10", textSize = "text-sm" }: { name: string, size?: string, textSize?: string }) => {
     const initial = name ? name.charAt(0) : '?';
@@ -192,6 +194,12 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     return Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 }));
   }, [viewerProfile]);
 
+  // 💡 ポータル用ファネル分析データ
+  const coreCount = vipListeners.filter(v => v.total_coins >= 1000).length;
+  const middleCount = vipListeners.filter(v => v.total_coins >= 100 && v.total_coins < 1000).length;
+  const lightCount = vipListeners.filter(v => v.total_coins > 0 && v.total_coins < 100).length;
+  const totalAnalyzed = coreCount + middleCount + lightCount || 1;
+
   if (loading && !liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-indigo-500 animate-pulse">CONNECTING...</div>;
   if (!liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-rose-500">LIVER NOT FOUND</div>;
 
@@ -305,20 +313,37 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         </div>
 
         <div className="mt-5 px-6 relative z-10 flex-grow flex flex-col min-h-0">
+          {/* 💡 ライバー用モチベーションファネル */}
+          {activePeriod !== 'total' && totalAnalyzed > 0 && (
+            <div className="mb-3 bg-slate-950/50 p-3 rounded-xl border border-slate-800/80 relative z-10">
+              <div className="flex justify-between text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-widest">
+                <span>コア (1K+) <span className="text-orange-400">{coreCount}</span></span>
+                <span>ミドル <span className="text-indigo-400">{middleCount}</span></span>
+                <span>ライト <span className="text-slate-500">{lightCount}</span></span>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-1.5 flex overflow-hidden">
+                <div style={{width: `${(coreCount/totalAnalyzed)*100}%`}} className="bg-orange-500"></div>
+                <div style={{width: `${(middleCount/totalAnalyzed)*100}%`}} className="bg-indigo-500"></div>
+                <div style={{width: `${(lightCount/totalAnalyzed)*100}%`}} className="bg-slate-500"></div>
+              </div>
+            </div>
+          )}
+
           <div className="flex space-x-2 border-b border-slate-800/80 pb-2 mb-3 px-1">
             <button onClick={() => setActiveView('vips')} className={`flex-1 flex justify-center items-center pb-2 border-b-2 transition-all ${activeView === 'vips' ? 'border-amber-500 text-amber-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Crown size={14} className="mr-1.5"/> <span className="text-[11px] font-black tracking-wider uppercase">Strategic VIPs</span></button>
             <button onClick={() => setActiveView('logs')} className={`flex-1 flex justify-center items-center pb-2 border-b-2 transition-all ${activeView === 'logs' ? 'border-indigo-500 text-indigo-400' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><Activity size={14} className="mr-1.5"/> <span className="text-[11px] font-black tracking-wider uppercase">Live Logs</span></button>
           </div>
           
-          <div className="flex-grow overflow-y-auto space-y-2.5 pr-2 pb-6 scrollbar-none">
+          <div className={`flex-grow overflow-y-auto space-y-2.5 pr-1 pb-6 ${scrollbarClass}`}>
             {activeView === 'vips' && vipListeners.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-48 text-slate-600"><Users size={48} className="opacity-20 mb-4" /><p className="font-bold text-sm uppercase tracking-widest">No Listeners</p><p className="text-xs mt-1">指定期間のデータがありません</p></div>
+              <div className="flex flex-col items-center justify-center h-48 text-slate-600"><Users size={48} className="opacity-20 mb-4" /><p className="font-bold text-sm uppercase tracking-widest">No Listeners</p></div>
             )}
             {activeView === 'vips' && vipListeners.map((vip) => {
               const contributionRate = totalCoins > 0 ? (vip.total_coins / totalCoins) * 100 : 0;
               const isCore = vip.total_coins >= 1000;
               const coinsToCore = 1000 - vip.total_coins;
               const progress = Math.min((vip.total_coins / 1000) * 100, 100);
+              const isSleeping = vip.last_seen && (new Date().getTime() - new Date(vip.last_seen).getTime()) > 3 * 24 * 60 * 60 * 1000;
 
               return (
                 <div key={vip.viewer_id} onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})} className={`flex flex-col p-3 rounded-2xl border transition-all cursor-pointer active:scale-[0.98] ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20' : 'bg-slate-900/60 border-slate-800/50 hover:bg-slate-800/80'}`}>
@@ -329,6 +354,8 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                     
                     <div className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank'); }}>
                       <SafeAvatar src={vip.avatar_url} name={vip.viewer_name} size="w-10 h-10" />
+                      {/* 💡 休眠バッジ */}
+                      {isSleeping && <div title="3日以上離脱の可能性" className="absolute -top-1 -right-1 bg-slate-900 border border-slate-700 rounded-full p-0.5 shadow-lg"><MoonMoon size={10} className="text-indigo-400"/></div>}
                     </div>
 
                     <div className="flex-grow ml-3 min-w-0">
@@ -342,14 +369,14 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                         
                         <div className="flex items-center gap-2 mt-0.5">
                           <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank'); }} className="text-[11px] font-mono font-semibold text-indigo-400/90 truncate cursor-pointer hover:underline">
-                            {vip.unique_id ? `@${vip.unique_id}` : '@ID未取得'}
+                            {vip.unique_id ? `@${vip.unique_id}` : '@unknown'}
                           </span>
                         </div>
                       </div>
                     </div>
                     <div className="flex flex-col items-end flex-shrink-0 ml-3">
                       <span className={`font-black text-sm ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                      <span className="text-[9px] text-slate-500">ダイヤ</span>
+                      <span className="text-[9px] text-slate-500 font-medium flex items-center mt-1"><Clock size={10} className="mr-1 opacity-50"/> {vip.last_seen ? format(parseISO(vip.last_seen), 'MM/dd') : '-'}</span>
                     </div>
                   </div>
                   {!isCore && (
@@ -363,7 +390,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             })}
 
             {activeView === 'logs' && recentLogs.length === 0 && (
-              <div className="flex flex-col items-center justify-center h-48 text-slate-600"><Search size={48} className="opacity-20 mb-4" /><p className="font-bold text-sm uppercase tracking-widest">No Logs</p><p className="text-xs mt-1">指定期間のログがありません</p></div>
+              <div className="flex flex-col items-center justify-center h-48 text-slate-600"><Search size={48} className="opacity-20 mb-4" /><p className="font-bold text-sm uppercase tracking-widest">No Logs</p></div>
             )}
             {activeView === 'logs' && recentLogs.map((log, i) => (
               <div key={log.id} onClick={() => log.viewers && setSelectedViewer({id: log.viewers.id, name: log.viewers.name})} className={`flex items-center justify-between p-3 rounded-2xl border transition-all duration-500 cursor-pointer active:scale-[0.98] ${i === 0 ? 'bg-indigo-600/10 border-indigo-500/30' : 'bg-slate-900/40 border-slate-800/50 hover:bg-slate-800/80'}`}>
@@ -389,7 +416,6 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           </div>
         </div>
 
-        {/* 💡 即時展開モーダル（スマホ用UI） */}
         {selectedViewer && (
           <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/80 backdrop-blur-sm animate-in fade-in" onClick={() => setSelectedViewer(null)}>
             <div className="bg-slate-900 border-t sm:border border-slate-700 rounded-t-3xl sm:rounded-3xl p-6 w-full max-w-md shadow-2xl relative h-[85vh] flex flex-col animate-in slide-in-from-bottom-full sm:slide-in-from-bottom-0" onClick={e => e.stopPropagation()}>
@@ -405,7 +431,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                 <button onClick={() => setActiveModalTab('logs')} className={`flex-1 flex justify-center items-center pb-2 border-b-2 transition-all ${activeModalTab === 'logs' ? 'border-emerald-500 text-emerald-400 font-bold' : 'border-transparent text-slate-500 hover:text-slate-300'}`}><List size={14} className="mr-1.5"/> <span className="text-[11px]">履歴</span></button>
               </div>
 
-              <div className="flex-grow overflow-y-auto pr-1 scrollbar-none min-h-0">
+              <div className={`flex-grow overflow-y-auto pr-1 min-h-0 ${scrollbarClass}`}>
                 {activeModalTab === 'analytics' ? (
                   loadingViewerProfile || !viewerProfile ? (
                     <div className="flex items-center justify-center h-40 text-indigo-500"><Loader2 className="animate-spin" size={32} /></div>
