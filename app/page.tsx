@@ -3,19 +3,19 @@
 import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/utils/supabase';
 import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2, Search, History, List, Moon, Sparkles, Target, BellRing, ChevronRight } from 'lucide-react';
+import { ShieldCheck, Users, Flame, UserPlus, X, Clock, Calendar, Globe, CalendarSearch, Coins, AlertTriangle, Crown, Award, ExternalLink, BarChart2, ArrowUpDown, MousePointer2, Download, Copy, Smartphone, Check, Loader2, KeyRound, Edit2, Search, History, List, Moon, Sparkles, Target, BellRing, Activity } from 'lucide-react';
 import { format, parseISO } from 'date-fns';
 import { motion, AnimatePresence } from 'framer-motion';
 
-type LiverStat = { system_id: string; username: string; liver_name?: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; reward_rate: number; pin_code: string; };
+type LiverStat = { system_id: string; username: string; liver_name?: string; avatar_url?: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; dependency_rate: number; reward_rate: number; pin_code: string; };
 type GiftLog = { id: number; created_at: string; coins: number; count?: number; gift_name?: string; viewers: { id: string; name: string; unique_id?: string; avatar_url?: string } | null; };
-type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; first_seen?: string; last_seen?: string; };
+type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; daily_core_count: number; visit_days: number; rank: number; first_seen?: string; last_seen?: string; };
 type ListenerProfile = { first_seen: string; last_seen: string; total_coins: number; day_of_week: Record<string, number>; hour_of_day: Record<string, number>; };
 
 export default function Dashboard() {
   const [stats, setStats] = useState<LiverStat[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'today' | 'yesterday' | 'month' | 'total' | 'custom'>('today');
+  const [activeTab, setActiveTab] = useState<'today' | 'yesterday' | 'week' | 'month' | 'total' | 'custom'>('today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   
@@ -104,6 +104,10 @@ export default function Dashboard() {
         const jstYesterday = new Date(jstNow); jstYesterday.setDate(jstYesterday.getDate() - 1);
         const yyyy = jstYesterday.getFullYear(); const mm = String(jstYesterday.getMonth() + 1).padStart(2, '0'); const dd = String(jstYesterday.getDate()).padStart(2, '0');
         startIso = new Date(`${yyyy}-${mm}-${dd}T00:00:00+09:00`).toISOString(); endIso = new Date(`${yyyy}-${mm}-${dd}T23:59:59.999+09:00`).toISOString();
+      } else if (activeTab === 'week') {
+        const jstWeekAgo = new Date(jstNow); jstWeekAgo.setDate(jstWeekAgo.getDate() - 6);
+        const yyyy = jstWeekAgo.getFullYear(); const mm = String(jstWeekAgo.getMonth() + 1).padStart(2, '0'); const dd = String(jstWeekAgo.getDate()).padStart(2, '0');
+        startIso = new Date(`${yyyy}-${mm}-${dd}T00:00:00+09:00`).toISOString();
       } else if (activeTab === 'month') {
         const yyyy = jstNow.getFullYear(); const mm = String(jstNow.getMonth() + 1).padStart(2, '0');
         startIso = new Date(`${yyyy}-${mm}-01T00:00:00+09:00`).toISOString();
@@ -140,7 +144,7 @@ export default function Dashboard() {
     const { startIso, endIso } = getTimeBounds();
     const params: any = { p_system_id: systemId };
     if (startIso) params.p_start_date = startIso; if (endIso) params.p_end_date = endIso;
-    const { data } = await supabase.rpc('get_liver_vips', params);
+    const { data } = await supabase.rpc('get_liver_vips_advanced', params);
     setVipListeners(data ? (data as VipListener[]) : []);
   };
 
@@ -149,11 +153,7 @@ export default function Dashboard() {
     try {
       const { data } = await supabase.rpc('get_listener_profile', { p_liver_id: liverId, p_viewer_id: viewerId });
       setViewerProfile(data as ListenerProfile || null);
-    } catch (e) {
-      setViewerProfile(null);
-    } finally {
-      setLoadingViewerProfile(false);
-    }
+    } catch (e) { setViewerProfile(null); } finally { setLoadingViewerProfile(false); }
   };
 
   const fetchViewerLogs = async (liverId: string, viewerId: string) => {
@@ -162,13 +162,8 @@ export default function Dashboard() {
       const { startIso, endIso } = getTimeBounds();
       let query = supabase.from('gift_logs').select('id, created_at, coins, count, gift_name').eq('liver_id', liverId).eq('viewer_id', viewerId).order('created_at', { ascending: false }).limit(200);
       if (startIso) query = query.gte('created_at', startIso); if (endIso) query = query.lte('created_at', endIso);
-      const { data } = await query;
-      setViewerLogs(data ? (data as any) : []);
-    } catch (e) {
-      setViewerLogs([]);
-    } finally {
-      setLoadingViewerLogs(false);
-    }
+      const { data } = await query; setViewerLogs(data as any || []);
+    } catch (e) { setViewerLogs([]); } finally { setLoadingViewerLogs(false); }
   };
 
   const handleCustomFetch = () => { if (startDate && endDate) { fetchIntelligenceData(); if (selectedLiverId) { fetchDetailLogs(selectedLiverId); fetchVips(selectedLiverId); } } };
@@ -262,30 +257,47 @@ export default function Dashboard() {
     return Array.from({length: 24}, (_, i) => ({ name: `${i}時`, coins: viewerProfile.hour_of_day?.[i.toString()] || 0 }));
   }, [viewerProfile]);
 
-  // 💡 マネージャー向け AIアクション指示生成
+  // 💡 マネージャー向け AIアクション指示生成（タブ期間ごとにロジックを完全分岐）
   const managerAlerts = useMemo(() => {
-    if (!selectedLiverId || !selectedLiver) return [];
+    if (!selectedLiverId || !selectedLiver || vipListeners.length === 0) return [];
     const alerts = [];
+    
+    // 【共通】依存度リスク
     if (selectedLiver.dependency_rate >= 80 && selectedLiver.total_coins > 0) {
-      alerts.push({ type: 'danger', icon: AlertTriangle, text: '太客への依存度が極めて高くなっています。新規リスナーへの声かけと定着を最優先で指導してください。' });
+      alerts.push({ type: 'danger', icon: AlertTriangle, text: '上位1名への依存度が極めて高い状態です。新規層への声かけを指導してください。' });
     }
-    const nearCore = vipListeners.filter(v => v.total_coins >= 700 && v.total_coins < 1000);
-    if (nearCore.length > 0) {
-      alerts.push({ type: 'opportunity', icon: Target, text: `現在 ${nearCore.length} 名のリスナーがコアファン（1K）まであと少しです。ライバーに名指しでの感謝を促してください。` });
+
+    if (activeTab === 'today' || activeTab === 'yesterday') {
+      const nearDailyCore = vipListeners.filter(v => v.total_coins >= 700 && v.total_coins < 1000);
+      if (nearDailyCore.length > 0) alerts.push({ type: 'opportunity', icon: Target, text: `${nearDailyCore.length}名のリスナーがデイリーCore(1K)まであと少しです！名指しでの引き上げを促してください。` });
+    } 
+    else if (activeTab === 'week') {
+      const nearWeeklyCore = vipListeners.filter(v => v.total_coins >= 3500 && v.total_coins < 5000);
+      if (nearWeeklyCore.length > 0) alerts.push({ type: 'opportunity', icon: Target, text: `${nearWeeklyCore.length}名がウィークリーCore(5K)目前です。イベント中なら大きな力になります。` });
+      const highStreak = vipListeners.filter(v => v.daily_core_count >= 3 && v.total_coins < 5000);
+      if (highStreak.length > 0) alerts.push({ type: 'safe', icon: Sparkles, text: `${highStreak.length}名のリスナーが週に3回以上1Kを達成し、枠を底上げしています。` });
     }
-    const sleepingVips = vipListeners.filter(v => v.total_coins >= 100 && v.last_seen && (new Date().getTime() - new Date(v.last_seen).getTime()) > 3 * 24 * 60 * 60 * 1000);
-    if (sleepingVips.length > 0) {
-      alerts.push({ type: 'warning', icon: BellRing, text: `${sleepingVips.length} 名の優良リスナー（100+）が3日以上離脱しています。SNSでのメンション等で引き戻しを図りましょう。` });
+    else if (activeTab === 'month') {
+      const nearMonthlyCore = vipListeners.filter(v => v.total_coins >= 15000 && v.total_coins < 20000);
+      if (nearMonthlyCore.length > 0) alerts.push({ type: 'opportunity', icon: Target, text: `${nearMonthlyCore.length}名がマンスリーCore(20K)間近です！特別な還元や感謝を伝えるタイミングです。` });
+      
+      const highVisit = vipListeners.filter(v => (v.visit_days || 0) >= 10 && v.total_coins < 5000);
+      if (highVisit.length > 0) alerts.push({ type: 'warning', icon: Activity, text: `${highVisit.length}名が今月10日以上来訪していますが単価が低めです。ミドル層への単価アップ施策が必要です。` });
     }
+    else if (activeTab === 'total') {
+      const sleepingVips = vipListeners.filter(v => v.total_coins >= 5000 && v.last_seen && (new Date().getTime() - new Date(v.last_seen).getTime()) > 14 * 24 * 60 * 60 * 1000);
+      if (sleepingVips.length > 0) alerts.push({ type: 'warning', icon: BellRing, text: `累計5K以上の優良客 ${sleepingVips.length}名 が2週間以上離脱しています。SNS等で引き戻しを図りましょう。` });
+    }
+
     if (alerts.length === 0) {
-      alerts.push({ type: 'safe', icon: ShieldCheck, text: '現在、特筆すべきリスクはありません。健全な育成が進行中です。' });
+      alerts.push({ type: 'safe', icon: ShieldCheck, text: '特筆すべきリスクや機会はありません。堅実な育成が進行中です。' });
     }
     return alerts;
-  }, [selectedLiverId, selectedLiver, vipListeners]);
+  }, [selectedLiverId, selectedLiver, vipListeners, activeTab]);
 
-  const coreCount = vipListeners.filter(v => v.total_coins >= 1000).length;
-  const middleCount = vipListeners.filter(v => v.total_coins >= 100 && v.total_coins < 1000).length;
-  const lightCount = vipListeners.filter(v => v.total_coins > 0 && v.total_coins < 100).length;
+  const coreCount = vipListeners.filter(v => v.total_coins >= (activeTab==='month'?20000 : activeTab==='week'?5000 : 1000)).length;
+  const middleCount = vipListeners.filter(v => v.total_coins >= (activeTab==='month'?5000 : activeTab==='week'?1000 : 100) && v.total_coins < (activeTab==='month'?20000 : activeTab==='week'?5000 : 1000)).length;
+  const lightCount = vipListeners.filter(v => v.total_coins > 0 && v.total_coins < (activeTab==='month'?5000 : activeTab==='week'?1000 : 100)).length;
   const totalAnalyzed = coreCount + middleCount + lightCount || 1;
 
   if (loading && stats.length === 0) return <div className="min-h-screen bg-[#020617] flex items-center justify-center font-bold text-indigo-500 animate-pulse">システム初期化中...</div>;
@@ -301,14 +313,15 @@ export default function Dashboard() {
           </motion.div>
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
             <div className="flex space-x-1 bg-slate-900/80 p-1 rounded-xl shadow-inner border border-slate-800 backdrop-blur-sm relative">
-              {['today', 'yesterday', 'month', 'total', 'custom'].map((tab) => (
-                <button key={tab} onClick={() => setActiveTab(tab as any)} className={`flex items-center px-4 py-2 rounded-lg text-xs font-bold transition-colors relative z-10 ${activeTab === tab ? 'text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+              {['today', 'yesterday', 'week', 'month', 'total', 'custom'].map((tab) => (
+                <button key={tab} onClick={() => setActiveTab(tab as any)} className={`flex items-center px-3 md:px-4 py-2 rounded-lg text-xs font-bold transition-colors relative z-10 ${activeTab === tab ? 'text-white' : 'text-slate-400 hover:text-slate-200'}`}>
                   {activeTab === tab && <motion.div layoutId="adminTabBg" className="absolute inset-0 bg-indigo-600 rounded-lg shadow-md -z-10" transition={{ type: "spring", bounce: 0.2, duration: 0.6 }} />}
                   {tab === 'today' ? <><Clock size={14} className="mr-1.5" /> 本日</> : 
                    tab === 'yesterday' ? <><History size={14} className="mr-1.5" /> 昨日</> :
+                   tab === 'week' ? <><Activity size={14} className="mr-1.5" /> 直近7日間</> :
                    tab === 'month' ? <><Calendar size={14} className="mr-1.5" /> 今月</> :
                    tab === 'total' ? <><Globe size={14} className="mr-1.5" /> 全期間</> :
-                   <><CalendarSearch size={14} className="mr-1.5" /> 期間指定</>}
+                   <><CalendarSearch size={14} className="mr-1.5" /> 指定</>}
                 </button>
               ))}
             </div>
@@ -332,7 +345,7 @@ export default function Dashboard() {
             <h2 className="text-5xl font-black text-white mb-6 tracking-tight tabular-nums drop-shadow-[0_0_15px_rgba(99,102,241,0.2)]">{systemTotalCoins.toLocaleString()}</h2>
             <div className="flex gap-12">
               <div><p className="text-xs font-bold text-slate-500 mb-1">所属ライバー</p><p className="text-2xl font-bold text-white">{stats.length} <span className="text-sm text-slate-500 font-normal">名</span></p></div>
-              <div><p className="text-xs font-bold text-slate-500 mb-1">システム全体コアファン (1K+)</p><p className="text-2xl font-bold text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.3)]">{systemCoreFans} <span className="text-sm text-slate-500 font-normal">名</span></p></div>
+              <div><p className="text-xs font-bold text-slate-500 mb-1">システム全体コア達成者</p><p className="text-2xl font-bold text-amber-400 drop-shadow-[0_0_8px_rgba(251,191,36,0.3)]">{systemCoreFans} <span className="text-sm text-slate-500 font-normal">名</span></p></div>
             </div>
           </motion.div>
           <motion.div layout className="bg-slate-900/60 border border-slate-800/80 p-6 rounded-3xl shadow-sm flex flex-col justify-center backdrop-blur-sm">
@@ -358,7 +371,6 @@ export default function Dashboard() {
               <button onClick={handleExportCSV} disabled={isExporting} className="flex items-center text-xs font-bold text-slate-300 bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-xl border border-slate-700 transition-colors disabled:opacity-50">
                 <Download size={14} className="mr-2" /> {isExporting ? '生成中...' : 'CSV出力'}
               </button>
-              
               {isAdding ? (
                 <div className="flex items-center space-x-2 bg-slate-800/80 p-1.5 rounded-xl border border-slate-700 animate-in fade-in">
                   <div className="relative">
@@ -383,7 +395,7 @@ export default function Dashboard() {
                   <th className="p-4 pl-6 cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('username')}>ライバー {sortConfig.key === 'username' ? <ArrowUpDown size={10} className="inline ml-1 text-indigo-400" /> : <ArrowUpDown size={10} className="inline ml-1 opacity-30" />}</th>
                   <th className="p-4 text-right cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('total_coins')}>獲得ダイヤ {sortConfig.key === 'total_coins' ? <ArrowUpDown size={10} className="inline ml-1 text-indigo-400" /> : <ArrowUpDown size={10} className="inline ml-1 opacity-30" />}</th>
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('unique_listeners')}>参加者 (1C+) {sortConfig.key === 'unique_listeners' ? <ArrowUpDown size={10} className="inline ml-1 text-indigo-400" /> : <ArrowUpDown size={10} className="inline ml-1 opacity-30" />}</th>
-                  <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('core_fans')}>コアファン {sortConfig.key === 'core_fans' ? <ArrowUpDown size={10} className="inline ml-1 text-indigo-400" /> : <ArrowUpDown size={10} className="inline ml-1 opacity-30" />}</th>
+                  <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('core_fans')}>Core到達者 {sortConfig.key === 'core_fans' ? <ArrowUpDown size={10} className="inline ml-1 text-indigo-400" /> : <ArrowUpDown size={10} className="inline ml-1 opacity-30" />}</th>
                   <th className="p-4 w-48 cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('dependency_rate')}>太客依存率 {sortConfig.key === 'dependency_rate' ? <ArrowUpDown size={10} className="inline ml-1 text-indigo-400" /> : <ArrowUpDown size={10} className="inline ml-1 opacity-30" />}</th>
                   <th className="p-4 text-center cursor-pointer hover:text-slate-300 transition-colors" onClick={() => handleSort('reward_rate')}>報酬率 {sortConfig.key === 'reward_rate' ? <ArrowUpDown size={10} className="inline ml-1 text-indigo-400" /> : <ArrowUpDown size={10} className="inline ml-1 opacity-30" />}</th>
                   <th className="p-4 text-center">PINコード</th>
@@ -478,7 +490,6 @@ export default function Dashboard() {
                     </div>
                   </div>
                   
-                  {/* 💡 管理者向け AI指示パネル */}
                   {managerAlerts.length > 0 && (
                     <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mt-4 bg-slate-950/50 border border-slate-800 rounded-xl p-3">
                       <h4 className="text-[10px] font-black text-slate-400 mb-2 flex items-center tracking-widest"><Sparkles size={12} className="mr-1.5 text-indigo-400"/> マネージャー向け 推奨アクション</h4>
@@ -494,15 +505,14 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                {/* 💡 育成用：ファネル分析バー */}
                 <div className="mb-4 bg-slate-950/50 p-3 rounded-xl border border-slate-800/80 relative z-10">
                   <div className="flex justify-between text-[10px] font-bold text-slate-400 mb-1.5 uppercase tracking-widest">
-                    <span>コア層 (1K+) <span className="text-orange-400">{coreCount}名</span></span>
-                    <span>ミドル層 (100+) <span className="text-indigo-400">{middleCount}名</span></span>
+                    <span>コア層 <span className="text-amber-400">{coreCount}名</span></span>
+                    <span>ミドル層 <span className="text-indigo-400">{middleCount}名</span></span>
                     <span>ライト層 <span className="text-slate-500">{lightCount}名</span></span>
                   </div>
                   <div className="w-full bg-slate-800 rounded-full h-2 flex overflow-hidden">
-                    <motion.div initial={{ width: 0 }} animate={{ width: `${(coreCount/totalAnalyzed)*100}%` }} transition={{ duration: 1 }} className="bg-orange-500"></motion.div>
+                    <motion.div initial={{ width: 0 }} animate={{ width: `${(coreCount/totalAnalyzed)*100}%` }} transition={{ duration: 1 }} className="bg-amber-500"></motion.div>
                     <motion.div initial={{ width: 0 }} animate={{ width: `${(middleCount/totalAnalyzed)*100}%` }} transition={{ duration: 1, delay: 0.2 }} className="bg-indigo-500"></motion.div>
                     <motion.div initial={{ width: 0 }} animate={{ width: `${(lightCount/totalAnalyzed)*100}%` }} transition={{ duration: 1, delay: 0.4 }} className="bg-slate-500"></motion.div>
                   </div>
@@ -514,24 +524,30 @@ export default function Dashboard() {
                       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center h-full text-slate-600"><Users size={48} className="opacity-20 mb-4" /><p className="font-bold text-sm tracking-widest">リスナーデータがありません</p></motion.div>
                     ) : (
                       vipListeners.map((vip) => {
-                        const isSleeping = vip.last_seen && (new Date().getTime() - new Date(vip.last_seen).getTime()) > 3 * 24 * 60 * 60 * 1000;
+                        const isSleeping = vip.last_seen && (new Date().getTime() - new Date(vip.last_seen).getTime()) > 14 * 24 * 60 * 60 * 1000;
+                        const isDaily = activeTab === 'today' || activeTab === 'yesterday';
+                        const isWeekly = activeTab === 'week';
+                        const isMonthly = activeTab === 'month';
                         return (
                           <motion.div layout initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.98 }} key={vip.viewer_id} onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})} className={`flex items-center p-3 rounded-xl border transition-colors cursor-pointer group ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20 shadow-[0_0_10px_rgba(251,191,36,0.1)]' : 'bg-slate-950/50 border-slate-800/50 hover:bg-slate-800/80'}`}>
                             <div className="w-8 text-center flex-shrink-0">{vip.rank === 1 ? <Crown size={20} className="text-amber-400 mx-auto group-hover:scale-110 transition-transform" /> : vip.rank === 2 ? <Award size={20} className="text-slate-300 mx-auto" /> : vip.rank === 3 ? <Award size={20} className="text-amber-700 mx-auto" /> : <span className="text-sm font-bold text-slate-500">{vip.rank}</span>}</div>
                             <div className="ml-2 flex-shrink-0 relative z-10">
                               <SafeAvatar src={vip.avatar_url} name={vip.viewer_name} size="w-10 h-10" />
-                              {isSleeping && <div title="3日以上離脱の可能性" className="absolute -top-1 -right-1 bg-slate-900 border border-slate-700 rounded-full p-0.5 shadow-lg"><Moon size={10} className="text-indigo-400"/></div>}
+                              {isSleeping && <div title="2週間以上離脱の可能性" className="absolute -top-1 -right-1 bg-slate-900 border border-slate-700 rounded-full p-0.5 shadow-lg"><Moon size={10} className="text-indigo-400"/></div>}
                             </div>
                             <div className="flex-grow ml-4 min-w-0">
                               <div className="flex items-center gap-2">
                                 <span className={`font-bold text-sm truncate ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}>{vip.viewer_name}</span>
-                                {vip.total_coins >= 1000 && <span className="text-[9px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1 py-0.5 rounded shadow-[0_0_8px_rgba(249,115,22,0.3)]"><Flame size={8} className="inline mr-0.5"/>昇格済</span>}
+                                {isDaily && vip.total_coins >= 1000 && <span className="text-[9px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded shadow-[0_0_8px_rgba(251,191,36,0.3)] flex items-center"><Crown size={8} className="mr-0.5"/> Daily Core</span>}
+                                {isWeekly && vip.total_coins >= 5000 && <span className="text-[9px] font-black text-sky-400 bg-sky-500/10 border border-sky-500/20 px-1.5 py-0.5 rounded shadow-[0_0_8px_rgba(56,189,248,0.3)] flex items-center"><Award size={8} className="mr-0.5"/> Weekly Core</span>}
+                                {isMonthly && vip.total_coins >= 20000 && <span className="text-[9px] font-black text-fuchsia-400 bg-fuchsia-500/10 border border-fuchsia-500/20 px-1.5 py-0.5 rounded shadow-[0_0_8px_rgba(232,121,249,0.3)] flex items-center"><Flame size={8} className="mr-0.5"/> Monthly Core</span>}
+                                {!isDaily && vip.daily_core_count > 0 && <span className="text-[9px] font-bold text-amber-500/80 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded">👑 Daily <span className="text-amber-400 font-black tracking-widest ml-0.5">[ x{vip.daily_core_count} ]</span></span>}
                               </div>
                               <span className="text-[11px] font-mono text-indigo-400/90 truncate">{vip.unique_id ? `@${vip.unique_id}` : '@unknown'}</span>
                             </div>
                             <div className="flex flex-col items-end ml-4 flex-shrink-0">
                               <span className={`font-black text-sm tabular-nums ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                              <span className="text-[10px] text-slate-500 font-medium flex items-center mt-1"><Clock size={10} className="mr-1 opacity-50"/> {vip.last_seen ? format(parseISO(vip.last_seen), 'MM/dd') : '-'}</span>
+                              <span className="text-[10px] text-slate-500 font-medium flex items-center mt-1"><Clock size={10} className="mr-1 opacity-50"/> {vip.last_seen ? format(parseISO(vip.last_seen), 'MM/dd') : '-'} {vip.visit_days > 0 && <span className="ml-1 text-slate-400">({vip.visit_days}日来訪)</span>}</span>
                             </div>
                           </motion.div>
                         );

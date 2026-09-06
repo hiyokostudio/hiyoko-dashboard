@@ -8,9 +8,9 @@ import { BarChart, Bar, XAxis, CartesianGrid, Tooltip, ResponsiveContainer } fro
 import { motion, AnimatePresence } from 'framer-motion';
 
 type GiftLog = { id: number; created_at: string; coins: number; count?: number; gift_name?: string; viewers: { id: string; name: string; unique_id?: string; avatar_url?: string } | null; };
-type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; rank: number; first_seen?: string; last_seen?: string; };
+type VipListener = { viewer_id: string; viewer_name: string; unique_id: string | null; avatar_url: string | null; total_coins: number; daily_core_count: number; visit_days: number; rank: number; first_seen?: string; last_seen?: string; };
 type ListenerProfile = { first_seen: string; last_seen: string; total_coins: number; day_of_week: Record<string, number>; hour_of_day: Record<string, number>; };
-type LiverStat = { system_id: string; username: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; top1_coins: number; dependency_rate: number; };
+type LiverStat = { system_id: string; username: string; is_active: boolean; total_coins: number; unique_listeners: number; core_fans: number; dependency_rate: number; };
 
 export default function LiverPortal({ params }: { params: Promise<{ system_id: string }> }) {
   const { system_id } = use(params);
@@ -22,7 +22,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const [vipListeners, setVipListeners] = useState<VipListener[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const [activePeriod, setActivePeriod] = useState<'today' | 'yesterday' | 'month' | 'total' | 'custom'>('today');
+  const [activePeriod, setActivePeriod] = useState<'today' | 'yesterday' | 'week' | 'month' | 'total' | 'custom'>('today');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [activeView, setActiveView] = useState<'vips' | 'logs'>('vips'); 
@@ -67,6 +67,10 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
         const jstYesterday = new Date(jstNow); jstYesterday.setDate(jstYesterday.getDate() - 1);
         const yyyy = jstYesterday.getFullYear(); const mm = String(jstYesterday.getMonth() + 1).padStart(2, '0'); const dd = String(jstYesterday.getDate()).padStart(2, '0');
         startIso = new Date(`${yyyy}-${mm}-${dd}T00:00:00+09:00`).toISOString(); endIso = new Date(`${yyyy}-${mm}-${dd}T23:59:59.999+09:00`).toISOString();
+      } else if (activePeriod === 'week') {
+        const jstWeekAgo = new Date(jstNow); jstWeekAgo.setDate(jstWeekAgo.getDate() - 6);
+        const yyyy = jstWeekAgo.getFullYear(); const mm = String(jstWeekAgo.getMonth() + 1).padStart(2, '0'); const dd = String(jstWeekAgo.getDate()).padStart(2, '0');
+        startIso = new Date(`${yyyy}-${mm}-${dd}T00:00:00+09:00`).toISOString();
       } else if (activePeriod === 'month') {
         const yyyy = jstNow.getFullYear(); const mm = String(jstNow.getMonth() + 1).padStart(2, '0');
         startIso = new Date(`${yyyy}-${mm}-01T00:00:00+09:00`).toISOString();
@@ -98,7 +102,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             setRecentLogs(prev => [newLog, ...prev].slice(0, 50));
             const { startIso, endIso } = getTimeBounds(); const params: any = { p_system_id: system_id };
             if (startIso) params.p_start_date = startIso; if (endIso) params.p_end_date = endIso;
-            const { data } = await supabase.rpc('get_liver_vips', params);
+            const { data } = await supabase.rpc('get_liver_vips_advanced', params);
             setVipListeners(data ? (data as VipListener[]) : []);
         }
       }).subscribe();
@@ -141,7 +145,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     
     const params: any = { p_system_id: system_id };
     if (startIso) params.p_start_date = startIso; if (endIso) params.p_end_date = endIso;
-    const { data: vips } = await supabase.rpc('get_liver_vips', params); setVipListeners(vips ? (vips as VipListener[]) : []);
+    const { data: vips } = await supabase.rpc('get_liver_vips_advanced', params); setVipListeners(vips ? (vips as VipListener[]) : []);
 
     const { data: iData } = await supabase.rpc('get_intelligence_stats', { p_start_date: startIso, p_end_date: endIso });
     if (iData) { const myStat = (iData as LiverStat[]).find(s => s.system_id === system_id); if (myStat) setLiverStat(myStat); }
@@ -153,11 +157,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
     try {
       const { data } = await supabase.rpc('get_listener_profile', { p_liver_id: liverId, p_viewer_id: viewerId });
       setViewerProfile(data as ListenerProfile || null);
-    } catch (e) {
-      setViewerProfile(null);
-    } finally {
-      setLoadingViewerProfile(false);
-    }
+    } catch (e) { setViewerProfile(null); } finally { setLoadingViewerProfile(false); }
   };
 
   const fetchViewerLogs = async (liverId: string, viewerId: string) => {
@@ -166,13 +166,8 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
       const { startIso, endIso } = getTimeBounds();
       let query = supabase.from('gift_logs').select('id, created_at, coins, count, gift_name').eq('liver_id', liverId).eq('viewer_id', viewerId).order('created_at', { ascending: false }).limit(200);
       if (startIso) query = query.gte('created_at', startIso); if (endIso) query = query.lte('created_at', endIso);
-      const { data } = await query;
-      setViewerLogs(data as any || []);
-    } catch (e) {
-      setViewerLogs([]);
-    } finally {
-      setLoadingViewerLogs(false);
-    }
+      const { data } = await query; setViewerLogs(data as any || []);
+    } catch (e) { setViewerLogs([]); } finally { setLoadingViewerLogs(false); }
   };
 
   const handleRateUpdate = async () => {
@@ -197,25 +192,28 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
   const totalCoins = liverStat?.total_coins || 0;
   const isDanger = (liverStat?.dependency_rate || 0) >= 80 && totalCoins > 0;
 
-  // 💡 ネクストアクション（AI指示）の自動生成ロジック
+  // 💡 ポータル用 ネクストアクション（AI指示）
   const actionableAlerts = useMemo(() => {
     const alerts = [];
-    if (isDanger) alerts.push({ id: 'danger', type: 'danger', icon: AlertTriangle, text: '上位1名への依存度が高すぎます。新規層への挨拶と育成を意識しましょう。' });
+    if (isDanger) alerts.push({ id: 'danger', type: 'danger', icon: AlertTriangle, text: '特定の太客への依存度が高すぎます。新規リスナーへ積極的に声をかけましょう。' });
     
-    // コアファン（1K）昇格間近のリスナーを抽出
-    const nearCore = vipListeners.filter(v => v.total_coins >= 700 && v.total_coins < 1000);
-    nearCore.forEach(v => alerts.push({ id: `core_${v.viewer_id}`, type: 'opportunity', icon: Target, text: `${v.viewer_name}さんがコアファン昇格まであと${1000 - v.total_coins}ダイヤです！今日声かけしましょう。` }));
-    
-    // 3日以上来ていないミドル層以上（100+）の休眠VIPを抽出
-    const sleepingVips = vipListeners.filter(v => v.total_coins >= 100 && v.last_seen && (new Date().getTime() - new Date(v.last_seen).getTime()) > 3 * 24 * 60 * 60 * 1000);
-    sleepingVips.slice(0, 2).forEach(v => alerts.push({ id: `sleep_${v.viewer_id}`, type: 'warning', icon: BellRing, text: `お得意様の ${v.viewer_name} さんが3日以上未訪問です。話題に出してみましょう。` }));
+    if (activePeriod === 'today') {
+      const nearCore = vipListeners.filter(v => v.total_coins >= 700 && v.total_coins < 1000);
+      nearCore.forEach(v => alerts.push({ id: `core_${v.viewer_id}`, type: 'opportunity', icon: Target, text: `${v.viewer_name}さんがDaily Core(1K)まであと${1000 - v.total_coins}ダイヤ！今日中に声をかけましょう。` }));
+    } else if (activePeriod === 'week') {
+      const nearWeekly = vipListeners.filter(v => v.total_coins >= 3500 && v.total_coins < 5000);
+      nearWeekly.forEach(v => alerts.push({ id: `week_${v.viewer_id}`, type: 'opportunity', icon: Target, text: `${v.viewer_name}さんがWeekly Core(5K)目前です！イベントへの協力をお願いしてみましょう。` }));
+    } else if (activePeriod === 'month') {
+      const nearMonthly = vipListeners.filter(v => v.total_coins >= 15000 && v.total_coins < 20000);
+      nearMonthly.forEach(v => alerts.push({ id: `month_${v.viewer_id}`, type: 'opportunity', icon: Target, text: `${v.viewer_name}さんがMonthly Core(20K)目前です！最高の感謝を伝えてください。` }));
+    }
     
     return alerts;
-  }, [vipListeners, isDanger]);
+  }, [vipListeners, isDanger, activePeriod]);
 
-  const coreCount = vipListeners.filter(v => v.total_coins >= 1000).length;
-  const middleCount = vipListeners.filter(v => v.total_coins >= 100 && v.total_coins < 1000).length;
-  const lightCount = vipListeners.filter(v => v.total_coins > 0 && v.total_coins < 100).length;
+  const coreCount = vipListeners.filter(v => v.total_coins >= (activePeriod==='month'?20000 : activePeriod==='week'?5000 : 1000)).length;
+  const middleCount = vipListeners.filter(v => v.total_coins >= (activePeriod==='month'?5000 : activePeriod==='week'?1000 : 100) && v.total_coins < (activePeriod==='month'?20000 : activePeriod==='week'?5000 : 1000)).length;
+  const lightCount = vipListeners.filter(v => v.total_coins > 0 && v.total_coins < (activePeriod==='month'?5000 : activePeriod==='week'?1000 : 100)).length;
   const totalAnalyzed = coreCount + middleCount + lightCount || 1;
 
   if (loading && !liverInfo) return <div className="min-h-screen bg-[#050505] flex items-center justify-center font-black text-indigo-500 animate-pulse">システム接続中...</div>;
@@ -263,34 +261,24 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           <button onClick={() => { localStorage.removeItem(`unlocked_portal_${system_id}`); setIsUnlocked(false); }} className="p-2 text-slate-600 hover:text-slate-300 bg-slate-900/50 rounded-full border border-slate-800 transition-colors"><X size={16} /></button>
         </header>
 
-        <div className="px-6 relative z-10 mb-4">
+        <div className="px-5 relative z-10 mb-4">
           <div className="flex space-x-1 bg-slate-900/80 p-1 rounded-xl border border-slate-800/80 backdrop-blur-sm relative">
-            {['today', 'yesterday', 'month', 'total', 'custom'].map((period) => (
-              <button key={period} onClick={() => setActivePeriod(period as any)} className={`flex-1 py-2 rounded-lg text-[11px] font-bold transition-colors relative z-10 ${activePeriod === period ? 'text-white' : 'text-slate-400 hover:text-slate-200'}`}>
+            {['today', 'yesterday', 'week', 'month', 'total'].map((period) => (
+              <button key={period} onClick={() => setActivePeriod(period as any)} className={`flex-1 py-2 rounded-lg text-[10px] font-bold transition-colors relative z-10 ${activePeriod === period ? 'text-white' : 'text-slate-400 hover:text-slate-200'}`}>
                 {activePeriod === period && <motion.div layoutId="activeTabBg" className="absolute inset-0 bg-indigo-600 rounded-lg shadow-md -z-10" transition={{ type: "spring", bounce: 0.2, duration: 0.6 }} />}
-                {period === 'today' ? '本日' : period === 'yesterday' ? '昨日' : period === 'month' ? '今月' : period === 'total' ? '累計' : '指定'}
+                {period === 'today' ? '本日' : period === 'yesterday' ? '昨日' : period === 'week' ? '7日間' : period === 'month' ? '今月' : '累計'}
               </button>
             ))}
           </div>
-          <AnimatePresence>
-            {activePeriod === 'custom' && (
-              <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} className="mt-2 flex items-center space-x-2 bg-slate-900/80 p-1.5 rounded-xl border border-slate-800/80 backdrop-blur-sm overflow-hidden">
-                <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors"><input type="datetime-local" value={startDate} onChange={e => setStartDate(e.target.value)} className="w-full bg-transparent text-[10px] px-2 py-2 outline-none font-bold text-slate-300 [color-scheme:dark]" /></div>
-                <span className="text-slate-500 text-xs">〜</span>
-                <div className="flex-1 bg-slate-950 border border-slate-700 rounded-lg overflow-hidden focus-within:border-indigo-500 transition-colors"><input type="datetime-local" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full bg-transparent text-[10px] px-2 py-2 outline-none font-bold text-slate-300 [color-scheme:dark]" /></div>
-              </motion.div>
-            )}
-          </AnimatePresence>
         </div>
 
-        <div className="px-6 relative z-10 flex flex-col gap-3">
+        <div className="px-5 relative z-10 flex flex-col gap-3">
           
-          {/* 💡 アクション誘導型のアラートパネル（育成・防衛指示） */}
           <AnimatePresence>
-            {activePeriod === 'today' && actionableAlerts.length > 0 && (
+            {(activePeriod === 'today' || activePeriod === 'week' || activePeriod === 'month') && actionableAlerts.length > 0 && (
               <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-gradient-to-r from-indigo-900/40 to-slate-900 border border-indigo-500/30 rounded-2xl p-3 shadow-lg backdrop-blur-md relative overflow-hidden">
                 <div className="absolute top-0 right-0 p-2 opacity-20"><Sparkles size={40} className="text-indigo-400"/></div>
-                <h3 className="text-[10px] font-black text-indigo-300 mb-2 flex items-center"><Sparkles size={12} className="mr-1.5"/> 本日の推奨アクション</h3>
+                <h3 className="text-[10px] font-black text-indigo-300 mb-2 flex items-center"><Sparkles size={12} className="mr-1.5"/> 推奨アクション</h3>
                 <div className="space-y-1.5 relative z-10">
                   {actionableAlerts.map(alert => (
                     <motion.div key={alert.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className={`flex items-start gap-2 p-2 rounded-lg text-xs font-bold leading-tight ${alert.type === 'danger' ? 'bg-rose-500/10 text-rose-200 border border-rose-500/20' : alert.type === 'opportunity' ? 'bg-amber-500/10 text-amber-200 border border-amber-500/20' : 'bg-slate-800/50 text-slate-300 border border-slate-700/50'}`}>
@@ -306,7 +294,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
           <motion.div layout className="bg-gradient-to-br from-slate-900/80 to-black border border-slate-800/80 p-5 rounded-3xl shadow-2xl backdrop-blur-md relative overflow-hidden">
             <div className="absolute top-0 right-0 p-4 opacity-10"><Zap size={100} className="text-indigo-400"/></div>
             <p className="text-[11px] font-black text-slate-400 tracking-widest uppercase mb-1 flex items-center">
-              <TrendingUp size={12} className="mr-1.5 text-indigo-400"/> 推定報酬 ({activePeriod === 'today' ? '本日' : activePeriod === 'yesterday' ? '昨日' : activePeriod === 'month' ? '今月' : activePeriod === 'total' ? '累計' : '指定'})
+              <TrendingUp size={12} className="mr-1.5 text-indigo-400"/> 推定報酬 ({activePeriod === 'today' ? '本日' : activePeriod === 'yesterday' ? '昨日' : activePeriod === 'week' ? '直近7日間' : activePeriod === 'month' ? '今月' : '累計'})
             </p>
             <div className="flex items-baseline gap-1 mt-1"><span className="text-2xl font-black text-indigo-400">¥</span><motion.span key={currentRewardJPY} initial={{ opacity: 0.5, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-5xl font-black text-white tracking-tighter tabular-nums drop-shadow-[0_0_15px_rgba(255,255,255,0.2)]">{currentRewardJPY.toLocaleString()}</motion.span></div>
             <div className="mt-4 flex items-center gap-4 border-t border-slate-800/80 pt-3">
@@ -333,33 +321,18 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
               </div>
             </div>
           </motion.div>
-
-          <motion.div layout className={`p-4 rounded-2xl border backdrop-blur-md flex items-center justify-between ${isDanger ? 'bg-rose-950/40 border-rose-500/30' : 'bg-slate-900/60 border-slate-800/80'}`}>
-            <div className="flex gap-4">
-              <div><p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">参加者数</p><p className="text-base font-black text-slate-200">{liverStat?.unique_listeners || 0} <span className="text-[10px] font-normal text-slate-500">人</span></p></div>
-              <div><p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">コアファン</p><p className="text-base font-black text-orange-400 flex items-center">{liverStat?.core_fans || 0} <span className="text-[10px] font-normal text-slate-500 ml-0.5">人</span></p></div>
-            </div>
-            <div className="text-right">
-              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-widest">太客依存率</p>
-              {isDanger ? (
-                <p className="text-sm font-black text-rose-400 flex items-center justify-end animate-pulse"><AlertTriangle size={12} className="mr-1"/> {(liverStat?.dependency_rate || 0).toFixed(1)}%</p>
-              ) : (
-                <p className="text-sm font-black text-emerald-400 flex items-center justify-end"><ShieldCheck size={12} className="mr-1"/> {(liverStat?.dependency_rate || 0).toFixed(1)}%</p>
-              )}
-            </div>
-          </motion.div>
         </div>
 
-        <div className="mt-5 px-6 relative z-10 flex-grow flex flex-col min-h-0">
+        <div className="mt-5 px-5 relative z-10 flex-grow flex flex-col min-h-0">
           {activePeriod !== 'total' && totalAnalyzed > 0 && (
             <div className="mb-3 bg-slate-950/50 p-3 rounded-xl border border-slate-800/80 relative z-10">
               <div className="flex justify-between text-[9px] font-bold text-slate-400 mb-1.5 uppercase tracking-widest">
-                <span>コア層 (1K+) <span className="text-orange-400">{coreCount}</span></span>
+                <span>Core層 <span className="text-amber-400">{coreCount}</span></span>
                 <span>ミドル層 <span className="text-indigo-400">{middleCount}</span></span>
                 <span>ライト層 <span className="text-slate-500">{lightCount}</span></span>
               </div>
               <div className="w-full bg-slate-800 rounded-full h-1.5 flex overflow-hidden">
-                <motion.div initial={{ width: 0 }} animate={{ width: `${(coreCount/totalAnalyzed)*100}%` }} transition={{ duration: 1 }} className="bg-orange-500"></motion.div>
+                <motion.div initial={{ width: 0 }} animate={{ width: `${(coreCount/totalAnalyzed)*100}%` }} transition={{ duration: 1 }} className="bg-amber-500"></motion.div>
                 <motion.div initial={{ width: 0 }} animate={{ width: `${(middleCount/totalAnalyzed)*100}%` }} transition={{ duration: 1, delay: 0.2 }} className="bg-indigo-500"></motion.div>
                 <motion.div initial={{ width: 0 }} animate={{ width: `${(lightCount/totalAnalyzed)*100}%` }} transition={{ duration: 1, delay: 0.4 }} className="bg-slate-500"></motion.div>
               </div>
@@ -376,17 +349,21 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
             ))}
           </div>
           
-          <div className={`flex-grow overflow-y-auto space-y-2.5 pr-1 pb-6 ${scrollbarClass}`}>
+          <div className={`flex-grow overflow-y-auto space-y-2 pr-1 pb-6 ${scrollbarClass}`}>
             <AnimatePresence mode="popLayout">
               {activeView === 'vips' && vipListeners.length === 0 && (
                 <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center justify-center h-48 text-slate-600"><Users size={48} className="opacity-20 mb-4" /><p className="font-bold text-sm tracking-widest">リスナーデータがありません</p></motion.div>
               )}
               {activeView === 'vips' && vipListeners.map((vip) => {
-                const isCore = vip.total_coins >= 1000;
-                const isNearCore = vip.total_coins >= 700 && !isCore;
-                const coinsToCore = 1000 - vip.total_coins;
-                const progress = Math.min((vip.total_coins / 1000) * 100, 100);
-                const isSleeping = vip.last_seen && (new Date().getTime() - new Date(vip.last_seen).getTime()) > 3 * 24 * 60 * 60 * 1000;
+                const threshold = activePeriod === 'month' ? 20000 : activePeriod === 'week' ? 5000 : 1000;
+                const isCore = vip.total_coins >= threshold;
+                const isNearCore = !isCore && vip.total_coins >= (threshold * 0.7);
+                const coinsToCore = threshold - vip.total_coins;
+                const progress = Math.min((vip.total_coins / threshold) * 100, 100);
+                
+                const isDaily = activePeriod === 'today' || activePeriod === 'yesterday';
+                const isWeekly = activePeriod === 'week';
+                const isMonthly = activePeriod === 'month';
 
                 return (
                   <motion.div layout initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} key={vip.viewer_id} onClick={() => setSelectedViewer({id: vip.viewer_id, name: vip.viewer_name})} className={`flex flex-col p-3 rounded-2xl border transition-all cursor-pointer active:scale-[0.98] ${vip.rank === 1 ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/20' : isNearCore ? 'bg-orange-500/10 border-orange-500/40 shadow-[0_0_15px_rgba(249,115,22,0.15)] hover:bg-orange-500/20' : 'bg-slate-900/60 border-slate-800/50 hover:bg-slate-800/80'}`}>
@@ -397,16 +374,18 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                       
                       <div className={`ml-2 flex-shrink-0 relative z-10 cursor-pointer ${vip.unique_id ? 'hover:opacity-80 transition-opacity' : ''}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank'); }}>
                         <SafeAvatar src={vip.avatar_url} name={vip.viewer_name} size="w-10 h-10" />
-                        {isSleeping && <div title="3日以上離脱の可能性" className="absolute -top-1 -right-1 bg-slate-900 border border-slate-700 rounded-full p-0.5 shadow-lg"><Moon size={10} className="text-indigo-400"/></div>}
                       </div>
 
                       <div className="flex-grow ml-3 min-w-0">
                         <div className="flex flex-col relative z-10">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <span onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (vip.unique_id) window.open(`https://www.tiktok.com/@${vip.unique_id}`, '_blank'); }} className={`font-bold text-[13px] truncate cursor-pointer ${vip.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4' : ''} ${vip.rank === 1 ? 'text-amber-400' : 'text-slate-200'}`}>
-                              {vip.viewer_name} {vip.unique_id && <ExternalLink size={10} className="inline text-slate-500 ml-0.5" />}
+                              {vip.viewer_name}
                             </span>
-                            {isCore && <span className="text-[9px] font-black text-orange-400 bg-orange-500/10 border border-orange-500/20 px-1 py-0.5 rounded flex items-center shadow-[0_0_8px_rgba(249,115,22,0.4)]"><Flame size={8} className="mr-0.5"/> 昇格済</span>}
+                            {isDaily && isCore && <span className="text-[9px] font-black text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1 py-0.5 rounded flex items-center shadow-[0_0_8px_rgba(251,191,36,0.3)]"><Crown size={8} className="mr-0.5"/> Daily Core</span>}
+                            {isWeekly && isCore && <span className="text-[9px] font-black text-sky-400 bg-sky-500/10 border border-sky-500/20 px-1 py-0.5 rounded flex items-center shadow-[0_0_8px_rgba(56,189,248,0.3)]"><Award size={8} className="mr-0.5"/> Weekly Core</span>}
+                            {isMonthly && isCore && <span className="text-[9px] font-black text-fuchsia-400 bg-fuchsia-500/10 border border-fuchsia-500/20 px-1 py-0.5 rounded flex items-center shadow-[0_0_8px_rgba(232,121,249,0.3)]"><Flame size={8} className="mr-0.5"/> Monthly Core</span>}
+                            {!isDaily && vip.daily_core_count > 0 && <span className="text-[9px] font-bold text-amber-500/80 bg-amber-500/10 border border-amber-500/20 px-1 py-0.5 rounded flex items-center">👑 Daily <span className="text-amber-400 font-black tracking-widest ml-0.5">[ x{vip.daily_core_count} ]</span></span>}
                           </div>
                           
                           <div className="flex items-center gap-2 mt-0.5">
@@ -416,14 +395,14 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                           </div>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end flex-shrink-0 ml-3">
+                      <div className="flex flex-col items-end flex-shrink-0 ml-2">
                         <span className={`font-black text-sm tabular-nums ${vip.rank === 1 ? 'text-amber-400' : 'text-indigo-400'}`}>{vip.total_coins.toLocaleString()}</span>
-                        <span className="text-[9px] text-slate-500 font-medium flex items-center mt-1"><Clock size={10} className="mr-1 opacity-50"/> {vip.last_seen ? format(parseISO(vip.last_seen), 'MM/dd') : '-'}</span>
+                        <span className="text-[9px] text-slate-500 font-medium flex items-center mt-1"><Clock size={8} className="mr-1 opacity-50"/> {vip.last_seen ? format(parseISO(vip.last_seen), 'MM/dd') : '-'}</span>
                       </div>
                     </div>
-                    {!isCore && (
-                      <div className="mt-3 ml-11 bg-slate-950/50 p-2 rounded-lg border border-slate-800/50">
-                        <div className="flex justify-between items-center mb-1"><span className="text-[9px] font-bold text-slate-400 tracking-widest">コアファン昇格チャレンジ</span><span className={`text-[9px] font-black ${isNearCore ? 'text-amber-400 animate-pulse' : 'text-orange-400'}`}>あと {coinsToCore} ダイヤ</span></div>
+                    {!isCore && activePeriod !== 'total' && (
+                      <div className="mt-3 ml-10 bg-slate-950/50 p-2 rounded-lg border border-slate-800/50">
+                        <div className="flex justify-between items-center mb-1"><span className="text-[9px] font-bold text-slate-400 tracking-widest">Core到達チャレンジ</span><span className={`text-[9px] font-black ${isNearCore ? 'text-amber-400 animate-pulse' : 'text-orange-400'}`}>あと {coinsToCore}</span></div>
                         <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} transition={{ duration: 1 }} className={`h-full rounded-full ${isNearCore ? 'bg-amber-400' : 'bg-orange-500'}`}></motion.div></div>
                       </div>
                     )}
@@ -442,7 +421,7 @@ export default function LiverPortal({ params }: { params: Promise<{ system_id: s
                     </div>
                     <div className="flex flex-col overflow-hidden relative z-10">
                       <span className={`font-bold text-sm truncate cursor-pointer flex items-center gap-1 ${log.viewers?.unique_id ? 'hover:underline decoration-slate-400 underline-offset-4 text-slate-200' : 'text-slate-300'}`} onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (log.viewers?.unique_id) window.open(`https://www.tiktok.com/@${log.viewers.unique_id}`, '_blank'); }}>
-                        {log.viewers?.name || '不明'} {log.viewers?.unique_id && <ExternalLink size={10} className="text-slate-600"/>}
+                        {log.viewers?.name || '不明'}
                       </span>
                       <div className="text-[10px] text-slate-500 mt-0.5 flex items-center"><Clock size={10} className="mr-1"/> {format(new Date(log.created_at), 'MM/dd HH:mm:ss')}</div>
                     </div>
