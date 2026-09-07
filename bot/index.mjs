@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import WebSocket from 'ws'; // 🌟 エラーを消す特効薬
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: join(__dirname, '../.env.local') });
@@ -15,12 +16,16 @@ if (!supabaseUrl || !supabaseKey) {
   process.exit(1);
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// 🌟 特効薬（WebSocket）を注入して初期化
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  global: { WebSocket: WebSocket }
+});
+
 const activeConnections = new Map();
 const retryCounts = new Map();
 const retryTimeouts = new Map();
 
-// 💡 コンボの進捗を記憶するキャッシュ（メモリリーク防止のため古いものから自動消去）
+// 💡 コンボの進捗を記憶するキャッシュ
 class GiftCache {
   constructor(limit = 5000) {
     this.cache = new Map();
@@ -37,9 +42,14 @@ class GiftCache {
 }
 const comboCache = new GiftCache(5000);
 
+// 🎯 【強化版】価格辞書（日本語・英語の揺れを完全にカバー）
 const GIFT_PRICES = {
-  'Rose': 1, 'TikTok': 1, 'GG': 1, 'Heart Me': 1, 'Mini Speaker': 1, 'Tennis': 1,
-  'Popular Vote': 1, 'ぴょこギフ': 1, 'ぼくリス大筆': 1, 'Coffee': 1, 'Ice Cream': 1,
+  'Rose': 1, 'バラ': 1,
+  'TikTok': 1, 'GG': 1, 
+  'Heart Me': 1, 'ハートミー': 1,
+  'Mini Speaker': 1, 'Tennis': 1,
+  'Popular Vote': 1, 'ぴょこギフ': 1, 'ぼくリス大筆': 1,
+  'Coffee': 1, 'Ice Cream': 1,
   'Finger Heart': 5, 'Mic': 5, 'Panda': 5,
   'Doughnut': 30, 'Perfume': 20,
   'Hat and Mustache': 99, 'Cap': 99, 'Paper Crane': 99,
@@ -60,7 +70,8 @@ const getStrId = (val) => {
   return String(val);
 };
 
-console.log('🤖 Hiyoko Intelligence: 監視Botエンジン起動 (v8 究極差分ロジック・リアルタイム捕捉版)');
+// 💡 バージョン名を v9 に変更
+console.log('🤖 Hiyoko Intelligence: 監視Botエンジン起動 (v9 究極ギフト捕捉・完全日本語対応版)');
 
 async function startBot() {
   setInterval(checkTargets, 30000);
@@ -145,9 +156,10 @@ function connectToLive(systemId, username, currentLiverName, currentAvatarUrl) {
   const currentRetry = retryCounts.get(systemId) || 0;
   console.log(`📡 [${username}] 接続を試行中... (リトライ回数: ${currentRetry})`);
   
+  // 💡 公式の拡張データを強制的にON
   const connection = new TikTokLiveConnection(username, {
     processInitialData: false,
-    enableExtendedGiftInfo: false,
+    enableExtendedGiftInfo: true, 
     clientParams: { "app_language": "ja-JP", "device_platform": "web" }
   });
   
@@ -203,24 +215,23 @@ function connectToLive(systemId, username, currentLiverName, currentAvatarUrl) {
       const groupId = getStrId(data.groupId) || getStrId(data.gift?.groupId) || getStrId(data.msgId);
       let diffCount = currentRepeatCount;
 
-      // 💡 差分計算（Diff）ロジック
       if (groupId) {
         const prevCount = comboCache.get(groupId) || 0;
         diffCount = currentRepeatCount - prevCount;
-        
-        // 差分が0以下（重複通知や遅延した古い通知）の場合は完全に弾く
         if (diffCount <= 0) return;
-        
-        // キャッシュを最新の連打数に更新
         comboCache.set(groupId, currentRepeatCount);
       }
 
+      // 💡 価格取得の究極ロジック
       let diamondCount = data.diamondCount || data.gift?.diamondCount || data.gift?.diamond_count || data.gift?.coinCount || 0;
-      if (diamondCount === 0) diamondCount = GIFT_PRICES[giftName] || 0;
+      if (diamondCount === 0 && data.extendedGiftInfo) {
+        diamondCount = data.extendedGiftInfo.diamond_count || 0;
+      }
+      if (diamondCount === 0) {
+        diamondCount = GIFT_PRICES[giftName] || 0;
+      }
       
-      // 💡 確実な単価 × 増えた分（差分）の数
       const coins = diamondCount * diffCount;
-
       if (coins <= 0) return;
 
       const rawUserId = getStrId(data.userId) || getStrId(data.user?.userId) || getStrId(data.user?.id) || getStrId(data.user?.uid);
@@ -232,7 +243,6 @@ function connectToLive(systemId, username, currentLiverName, currentAvatarUrl) {
       let profilePic = data.profilePictureUrl || data.user?.profilePictureUrl || null;
       if (!profilePic && data.user?.avatarThumb?.urlList?.length > 0) profilePic = data.user.avatarThumb.urlList[0];
       if (!profilePic && data.user?.avatarMedium?.urlList?.length > 0) profilePic = data.user.avatarMedium.urlList[0];
-      
       if (profilePic && profilePic.length > 250) profilePic = profilePic.substring(0, 250);
 
       const rawGiftId = getStrId(data.giftId) || getStrId(data.gift?.id) || getStrId(data.gift?.gift_id) || 'unknown_gift';

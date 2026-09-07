@@ -308,7 +308,7 @@ export default function Dashboard() {
         
         <header className="flex flex-col xl:flex-row xl:items-center justify-between gap-6 border-b border-slate-800/80 pb-6 relative">
           <motion.div initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }}>
-            <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Hiyoko Intelligence</h1>
+            <h1 className="text-3xl font-black tracking-tight bg-gradient-to-r from-indigo-400 to-cyan-400 bg-clip-text text-transparent">Hiyoko Studio</h1>
             <p className="text-slate-400 mt-1 text-sm font-medium tracking-widest">TikTok Live 統合マネジメントシステム</p>
           </motion.div>
           <div className="flex flex-col md:flex-row gap-4 items-start md:items-center">
